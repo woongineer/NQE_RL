@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 
 
 # Load and process data
-def data_load_and_process():
+def data_load_and_process(reduction_size: int = 4):
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
     x_train, x_test = x_train[..., np.newaxis] / 255.0, x_test[
         ..., np.newaxis] / 255.0
@@ -23,8 +23,8 @@ def data_load_and_process():
     x_test = tf.image.resize(x_test[:], (256, 1)).numpy()
     x_train, x_test = tf.squeeze(x_train).numpy(), tf.squeeze(x_test).numpy()
 
-    X_train = PCA(4).fit_transform(x_train)
-    X_test = PCA(4).fit_transform(x_test)
+    X_train = PCA(reduction_size).fit_transform(x_train)
+    X_test = PCA(reduction_size).fit_transform(x_test)
     x_train, x_test = [], []
     for x in X_train:
         x = (x - x.min()) * (np.pi / (x.max() - x.min()))
@@ -48,23 +48,24 @@ def new_data(batch_size, X, Y):
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, data_size, action_size):
         super(PolicyNetwork, self).__init__()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(4, 8),
+            nn.Linear(data_size, data_size ** 2),
             nn.ReLU(),
-            nn.Linear(8, 8),
+            nn.Linear(data_size ** 2, data_size ** 2),
             nn.ReLU(),
-            nn.Linear(8, 4)
+            nn.Linear(data_size ** 2, data_size)
         )
         self.state_linear_relu_stack = nn.Sequential(
-            nn.Linear(state_size, 8),
+            nn.Linear(state_size, state_size * 2),
             nn.ReLU(),
-            nn.Linear(8, 8),
+            nn.Linear(state_size * 2, state_size * 2),
             nn.ReLU(),
-            nn.Linear(8, 4)
+            nn.Linear(state_size * 2, state_size)
         )
-        self.action_select = nn.Linear(4*3, action_size)
+        self.action_select = nn.Linear(state_size + data_size + data_size,
+                                       action_size)
 
     def forward(self, state, x1, x2):
         x1 = self.linear_relu_stack(x1)
@@ -79,16 +80,14 @@ class PolicyNetwork(nn.Module):
 class QASEnv(gym.Env):
     def __init__(
             self,
-            qubits: list[str] = None,  ##TODO Check Type
+            num_of_qubit: int = 4,
             fidelity_threshold: float = 0.95,
             reward_penalty: float = 0.01,
             max_timesteps: int = 20,
     ):
         super().__init__()
-        self.simulator = qml.device('default.qubit', wires=4)
-        if qubits is None:
-            qubits = self.simulator.wires.tolist()
-        self.qubits = qubits
+        self.simulator = qml.device('default.qubit', wires=num_of_qubit)
+        self.qubits = self.simulator.wires.tolist()
         self.fidelity_threshold = fidelity_threshold
         self.reward_penalty = reward_penalty
         self.max_timesteps = max_timesteps
@@ -98,7 +97,7 @@ class QASEnv(gym.Env):
         self.circuit_gates = []
         return self.get_obs()
 
-    def select_action(self, action, input):  #여기다가 input adj??
+    def select_action(self, action, input):  # 여기다가 input adj??
         action_gates = []
         for idx, qubit in enumerate(self.qubits):
             next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
@@ -117,96 +116,36 @@ class QASEnv(gym.Env):
                 action_gates += [qml.CNOT(wires=[qubit, next_qubit])]
         self.action_gate = action_gates
 
-
-    # def get_obs(self):
-    #     circuit = self.get_pennylane()
-    #     # observable Pauli XYZ로 circuit을 측정해야 한다....
-    #     # get_pennylane이 현재 circuit을 가져와야 하는데 그걸 어떻게 하지??
-    #     # obs = [qml.expval(circuit) for obs in observables]
-    #     observables = []
-    #     for qubit in range(len(self.qubits)):
-    #         observables.append(qml.PauliX(wires=qubit))
-    #         observables.append(qml.PauliY(wires=qubit))
-    #         observables.append(qml.PauliZ(wires=qubit))
-    #
-    #     exp_vals = [circuit(obs) for obs in observables]
-    #     return np.array(exp_vals).real
-
-    # def get_obs(self):
-    #     circuit = self.get_pennylane()
-    #     observables = []
-    #     for qubit in range(len(self.qubits)):
-    #         observables.append(qml.PauliX(wires=qubit))
-    #         observables.append(qml.PauliY(wires=qubit))
-    #         observables.append(qml.PauliZ(wires=qubit))
-    #
-    #     def expectation_value(observable):
-    #         @qml.qnode(circuit.device)
-    #         def measure():
-    #             return qml.expval(observable)
-    #         return measure()
-    #
-    #     exp_vals = [expectation_value(obs) for obs in observables]
-    #
-    #     return exp_vals
-
     def get_obs(self):
-        # circuit = self.get_pennylane()
-        observables = []
-        for qubit in range(len(self.qubits)):
-            observables.append(qml.PauliX(wires=qubit))
-            observables.append(qml.PauliY(wires=qubit))
-            observables.append(qml.PauliZ(wires=qubit))
-
 
         dev = qml.device("default.qubit", wires=self.qubits)
 
         gates = self.action_gate
 
         @qml.qnode(dev)
-        def circuit():
+        def circuit(pauli):
             for qubit in range(len(self.qubits)):
                 qml.Identity(wires=qubit)
-            qml.RX(np.pi / 7, wires=2)  ##TODO Remove
-            qml.RY(np.pi / 7, wires=1)
-            qml.RZ(np.pi / 7, wires=0)
+            # qml.RX(np.pi / 7, wires=3)  ##TODO Remove
+            # qml.RY(np.pi / 7, wires=1)
+            # qml.RZ(np.pi / 7, wires=0)
 
             for gate in gates:
                 gate
 
-            expvals = []
-            for ob in observables:
-                expvals.append(qml.expval(ob))
-            return expvals
+            if pauli == 'X':
+                return [qml.expval(qml.PauliX(wires=w)) for w in
+                        range(len(self.qubits))]
 
-        # def expectation_value(observable):
-        #     @qml.qnode(circuit.device)
-        #     def measure():
-        #         return qml.expval(observable)
-        #     return measure()
-        #
-        # exp_vals = [expectation_value(obs) for obs in observables]
-        exp_vals = circuit(observables)
-        return exp_vals
+            elif pauli == 'Y':
+                return [qml.expval(qml.PauliY(wires=w)) for w in
+                        range(len(self.qubits))]
 
-    def get_pennylane(self):
-        dev = qml.device("default.qubit", wires=self.qubits)
+            elif pauli == 'Z':
+                return [qml.expval(qml.PauliZ(wires=w)) for w in
+                        range(len(self.qubits))]
 
-        gates = self.action_gate
-
-        @qml.qnode(dev)
-        def circuit():
-            for qubit in range(len(self.qubits)):
-                qml.Identity(wires=qubit)
-            qml.RX(np.pi/7, wires=2) ##TODO Remove
-            qml.RY(np.pi / 7, wires=1)
-            qml.RZ(np.pi / 7, wires=0)
-
-            for gate in gates:
-                gate
-            return qml.state()
-
-        return circuit
+        return np.concatenate((circuit('X'), circuit('Y'), circuit('Z')))
 
     # def get_fidelity(self):
     #   뭔가 get_pennylane이 처음부터 만드는 것처럼 adj도 처음부터 만들어도 될 거 같은데....
@@ -219,8 +158,6 @@ class QASEnv(gym.Env):
     #         return qml.state()
     #
     #     return circuit
-
-
 
     def step(self, action):
         action_gate = self.action_gates[action]
@@ -235,24 +172,25 @@ class QASEnv(gym.Env):
         return observation, reward, terminal, info
 
 
-
-
 if __name__ == "__main__":
     # Hyperparameters
+    data_size = 4  # JW Data reduction size from 256->, determine # of qubit
     gamma = 0.98
     learning_rate = 0.01
-    state_size = 8  # Input size for the policy (representing the circuit state)
-    action_size = 5  # Number of possible actions
-    policy = PolicyNetwork(state_size, action_size)
-    optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
-
-    # Load data
-    X_train, X_test, Y_train, Y_test = data_load_and_process()
-    batch_size = 25
+    state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
+    action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
     episodes = 10
     iterations = 7
+    batch_size = 25
 
-    env = QASEnv()
+    # Load data
+    X_train, X_test, Y_train, Y_test = data_load_and_process(reduction_size=data_size)
+    policy = PolicyNetwork(state_size=state_size,
+                           data_size=data_size,
+                           action_size=action_size)
+    optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
+
+    env = QASEnv(num_of_qubit=data_size)
 
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
@@ -263,7 +201,7 @@ if __name__ == "__main__":
 
         while not done:
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-            probs = policy(state_tensor)
+            probs = policy.forward(state_tensor, X1_batch, X2_batch)
             dist = torch.distributions.Categorical(probs[0])
             action = dist.sample().item()
 
