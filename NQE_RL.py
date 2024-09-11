@@ -71,6 +71,7 @@ class PolicyNetwork(nn.Module):
         x1 = self.linear_relu_stack(x1)
         x2 = self.linear_relu_stack(x2)
         x_state = self.state_linear_relu_stack(state)
+        x_state = x_state.expand(x1.shape[0], -1)
         x = torch.concat([x1, x2, x_state], 1)
         action_probs = torch.softmax(self.action_select(x), dim=-1)
 
@@ -94,33 +95,36 @@ class QASEnv(gym.Env):
         self.action_gate = []
 
     def reset(self):
-        self.circuit_gates = []
+        self.circuit_gates_x1 = []
+        self.circuit_gates_x2 = []
         return self.get_obs()
 
     def select_action(self, action, input):  # 여기다가 input adj??
-        action_gates = []
-        for idx, qubit in enumerate(self.qubits):
-            next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
-            if action == 0:
-                action_gates += [qml.Hadamard(wires=idx)]
-            elif action == 1:
-                for j in range(input.shape[-1]):
-                    action_gates += [qml.RX(input[j], wires=idx)]
-            elif action == 2:
-                for j in range(input.shape[-1]):
-                    action_gates += [qml.RY(input[j], wires=idx)]
-            elif action == 3:
-                for j in range(input.shape[-1]):
-                    action_gates += [qml.RZ(input[j], wires=idx)]
-            elif action == 4:
-                action_gates += [qml.CNOT(wires=[qubit, next_qubit])]
-        self.action_gate = action_gates
+        action_set = []
+        for i in range(len(action)):  # JW batch size 만큼 iter
+            action_per_batch = []
+            for idx, qubit in enumerate(self.qubits):
+                next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
+                if action[i] == 0:
+                    action_per_batch += [qml.Hadamard(wires=idx)]
+                elif action[i] == 1:
+                    action_per_batch += [qml.RX(input[i][idx], wires=idx)]
+                elif action[i] == 2:
+                    action_per_batch += [qml.RY(input[i][idx], wires=idx)]
+                elif action[i] == 3:
+                    action_per_batch += [qml.RZ(input[i][idx], wires=idx)]
+                elif action[i] == 4:
+                    action_per_batch += [qml.CNOT(wires=[qubit, next_qubit])]
+            action_set += [action_per_batch]
+        self.action_gate = action_set
+
 
     def get_obs(self):
 
         dev = qml.device("default.qubit", wires=self.qubits)
 
-        gates = self.action_gate
+        gates_x1 = self.circuit_gates_x1
+        gates_x2 = self.circuit_gates_x2
 
         @qml.qnode(dev)
         def circuit(pauli):
@@ -130,7 +134,7 @@ class QASEnv(gym.Env):
             # qml.RY(np.pi / 7, wires=1)
             # qml.RZ(np.pi / 7, wires=0)
 
-            for gate in gates:
+            for gate in gates_x1:
                 gate
 
             if pauli == 'X':
@@ -159,10 +163,15 @@ class QASEnv(gym.Env):
     #
     #     return circuit
 
-    def step(self, action):
-        action_gate = self.action_gates[action]
-        self.circuit_gates.append(action_gate)
+    def step(self, action, X1, X2):
+        action_gate_x1 = self.select_action(action, X1)
+        action_gate_x2 = self.select_action(action, X2)
+
+        self.circuit_gates_x1.append(action_gate_x1)
+        self.circuit_gates_x2.append(action_gate_x2)
+
         observation = self.get_obs()
+
         fidelity = self.get_fidelity()
         reward = fidelity - self.reward_penalty if fidelity > self.fidelity_threshold else -self.reward_penalty
         terminal = (reward > 0.) or (
@@ -202,12 +211,12 @@ if __name__ == "__main__":
         while not done:
             state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
             probs = policy.forward(state_tensor, X1_batch, X2_batch)
-            dist = torch.distributions.Categorical(probs[0])
-            action = dist.sample().item()
+            dists = [torch.distributions.Categorical(prob) for prob in probs]
+            actions = [dist.sample().item() for dist in dists]
 
-            next_state, reward, done, info = env.step(action)
+            next_state, reward, done, info = env.step(actions, X1_batch, X2_batch)
 
-            log_probs.append(dist.log_prob(torch.tensor(action)))
+            log_probs.append(dists.log_prob(torch.tensor(actions)))
             rewards.append(reward)
 
             state = next_state
