@@ -47,6 +47,13 @@ def new_data(batch_size, X, Y):
         X2_new).float(), torch.tensor(Y_new).float()
 
 
+def state_to_tensor(state):
+    pennylane_to_torch = [torch.tensor(i) for i in state]
+    stacked = torch.stack(pennylane_to_torch)
+    # return torch.tensor(stacked, dtype=torch.float32).unsqueeze(0)
+    return torch.tensor(stacked, dtype=torch.float32)
+
+
 class PolicyNetwork(nn.Module):
     def __init__(self, state_size, data_size, action_size):
         super(PolicyNetwork, self).__init__()
@@ -71,7 +78,7 @@ class PolicyNetwork(nn.Module):
         x1 = self.linear_relu_stack(x1)
         x2 = self.linear_relu_stack(x2)
         x_state = self.state_linear_relu_stack(state)
-        x_state = x_state.expand(x1.shape[0], -1)
+        # x_state = x_state.expand(x1.shape[0], -1)
         x = torch.concat([x1, x2, x_state], 1)
         action_probs = torch.softmax(self.action_select(x), dim=-1)
 
@@ -94,8 +101,8 @@ class QASEnv(gym.Env):
         self.max_timesteps = max_timesteps
 
     def reset(self):
-        self.circuit_gates_x1 = []
-        self.circuit_gates_x2 = []
+        self.circuit_gates_x1 = [self.select_action([0 for _ in range(25)], None)]
+        self.circuit_gates_x2 = [self.select_action([0 for _ in range(25)], None)]
         return self.get_obs()
 
     def select_action(self, action, input):  # 여기다가 input adj??
@@ -105,14 +112,16 @@ class QASEnv(gym.Env):
             for idx, qubit in enumerate(self.qubits):
                 next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
                 if action[i] == 0:
-                    action_per_batch += [qml.Hadamard(wires=idx)]
+                    action_per_batch += [qml.Identity(wires=idx)]
                 elif action[i] == 1:
-                    action_per_batch += [qml.RX(input[i][idx], wires=idx)]
+                    action_per_batch += [qml.Hadamard(wires=idx)]
                 elif action[i] == 2:
-                    action_per_batch += [qml.RY(input[i][idx], wires=idx)]
+                    action_per_batch += [qml.RX(input[i][idx].resolve_conj().numpy(), wires=idx)]
                 elif action[i] == 3:
-                    action_per_batch += [qml.RZ(input[i][idx], wires=idx)]
+                    action_per_batch += [qml.RY(input[i][idx].resolve_conj().numpy(), wires=idx)]
                 elif action[i] == 4:
+                    action_per_batch += [qml.RZ(input[i][idx].resolve_conj().numpy(), wires=idx)]
+                elif action[i] == 5:
                     action_per_batch += [qml.CNOT(wires=[qubit, next_qubit])]
             action_set += [action_per_batch]
         return action_set
@@ -165,6 +174,7 @@ class QASEnv(gym.Env):
             for seq in batch_x2[::-1]:
                 for gate in seq:
                     qml.adjoint(gate).queue()
+                    # gate.queue()
 
             if pauli == 'X':
                 return [qml.expval(qml.PauliX(wires=w)) for w in
@@ -183,7 +193,7 @@ class QASEnv(gym.Env):
             x_obs = circuit('X', batch_x1, batch_x2)
             y_obs = circuit('Y', batch_x1, batch_x2)
             z_obs = circuit('Z', batch_x1, batch_x2)
-            results.append(np.concatenate(x_obs, y_obs, z_obs))
+            results.append(np.concatenate((x_obs, y_obs, z_obs)))
 
 
         return results
@@ -224,7 +234,7 @@ if __name__ == "__main__":
     gamma = 0.98
     learning_rate = 0.01
     state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
-    action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
+    action_size = 6  # Number of possible actions, RX, RY, RZ, H, CX
     episodes = 10
     iterations = 7
     batch_size = 25
@@ -246,7 +256,7 @@ if __name__ == "__main__":
         rewards = []
 
         while not done:
-            state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+            state_tensor = state_to_tensor(state)
             probs = policy.forward(state_tensor, X1_batch, X2_batch)
             dists = [torch.distributions.Categorical(prob) for prob in probs]
             actions = [dist.sample().item() for dist in dists]
