@@ -92,7 +92,6 @@ class QASEnv(gym.Env):
         self.fidelity_threshold = fidelity_threshold
         self.reward_penalty = reward_penalty
         self.max_timesteps = max_timesteps
-        self.action_gate = []
 
     def reset(self):
         self.circuit_gates_x1 = []
@@ -116,26 +115,56 @@ class QASEnv(gym.Env):
                 elif action[i] == 4:
                     action_per_batch += [qml.CNOT(wires=[qubit, next_qubit])]
             action_set += [action_per_batch]
-        self.action_gate = action_set
+        return action_set
 
+
+    # def get_obs(self):
+    #
+    #     dev = qml.device("default.qubit", wires=self.qubits)
+    #
+    #     gates_x1 = self.circuit_gates_x1
+    #     gates_x2 = self.circuit_gates_x2
+    #
+    #     @qml.qnode(dev)
+    #     def circuit(pauli):
+    #         for qubit in range(len(self.qubits)):
+    #             qml.Identity(wires=qubit)
+    #         # qml.RX(np.pi / 7, wires=3)  ##TODO Remove
+    #         # qml.RY(np.pi / 7, wires=1)
+    #         # qml.RZ(np.pi / 7, wires=0)
+    #
+    #         for gate in gates_x1:
+    #             gate
+    #
+    #         if pauli == 'X':
+    #             return [qml.expval(qml.PauliX(wires=w)) for w in
+    #                     range(len(self.qubits))]
+    #
+    #         elif pauli == 'Y':
+    #             return [qml.expval(qml.PauliY(wires=w)) for w in
+    #                     range(len(self.qubits))]
+    #
+    #         elif pauli == 'Z':
+    #             return [qml.expval(qml.PauliZ(wires=w)) for w in
+    #                     range(len(self.qubits))]
+    #
+    #     return np.concatenate((circuit('X'), circuit('Y'), circuit('Z')))
 
     def get_obs(self):
 
         dev = qml.device("default.qubit", wires=self.qubits)
 
-        gates_x1 = self.circuit_gates_x1
-        gates_x2 = self.circuit_gates_x2
+        gates_x1 = [list(row) for row in zip(*self.circuit_gates_x1)]
+        gates_x2 = [list(row) for row in zip(*self.circuit_gates_x2)]
 
         @qml.qnode(dev)
-        def circuit(pauli):
-            for qubit in range(len(self.qubits)):
-                qml.Identity(wires=qubit)
-            # qml.RX(np.pi / 7, wires=3)  ##TODO Remove
-            # qml.RY(np.pi / 7, wires=1)
-            # qml.RZ(np.pi / 7, wires=0)
-
-            for gate in gates_x1:
-                gate
+        def circuit(pauli, batch_x1, batch_x2):
+            for seq in batch_x1:
+                for gate in seq:
+                    gate.queue()
+            for seq in batch_x2[::-1]:
+                for gate in seq:
+                    qml.adjoint(gate).queue()
 
             if pauli == 'X':
                 return [qml.expval(qml.PauliX(wires=w)) for w in
@@ -149,7 +178,15 @@ class QASEnv(gym.Env):
                 return [qml.expval(qml.PauliZ(wires=w)) for w in
                         range(len(self.qubits))]
 
-        return np.concatenate((circuit('X'), circuit('Y'), circuit('Z')))
+        results = []
+        for batch_x1, batch_x2 in zip(gates_x1, gates_x2):
+            x_obs = circuit('X', batch_x1, batch_x2)
+            y_obs = circuit('Y', batch_x1, batch_x2)
+            z_obs = circuit('Z', batch_x1, batch_x2)
+            results.append(np.concatenate(x_obs, y_obs, z_obs))
+
+
+        return results
 
     # def get_fidelity(self):
     #   뭔가 get_pennylane이 처음부터 만드는 것처럼 adj도 처음부터 만들어도 될 거 같은데....
