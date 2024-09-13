@@ -50,7 +50,6 @@ def new_data(batch_size, X, Y):
 def state_to_tensor(state):
     pennylane_to_torch = [torch.tensor(i) for i in state]
     stacked = torch.stack(pennylane_to_torch)
-    # return torch.tensor(stacked, dtype=torch.float32).unsqueeze(0)
     return torch.tensor(stacked, dtype=torch.float32)
 
 
@@ -78,7 +77,6 @@ class PolicyNetwork(nn.Module):
         x1 = self.linear_relu_stack(x1)
         x2 = self.linear_relu_stack(x2)
         x_state = self.state_linear_relu_stack(state)
-        # x_state = x_state.expand(x1.shape[0], -1)
         x = torch.concat([x1, x2, x_state], 1)
         action_probs = torch.softmax(self.action_select(x), dim=-1)
 
@@ -101,8 +99,10 @@ class QASEnv(gym.Env):
         self.max_timesteps = max_timesteps
 
     def reset(self):
-        self.circuit_gates_x1 = [self.select_action([0 for _ in range(25)], None)]
-        self.circuit_gates_x2 = [self.select_action([0 for _ in range(25)], None)]
+        self.circuit_gates_x1 = [
+            self.select_action([0 for _ in range(25)], None)]
+        self.circuit_gates_x2 = [
+            self.select_action([0 for _ in range(25)], None)]
         return self.get_obs()
 
     def select_action(self, action, input):  # 여기다가 input adj??
@@ -116,48 +116,18 @@ class QASEnv(gym.Env):
                 elif action[i] == 1:
                     action_per_batch += [qml.Hadamard(wires=idx)]
                 elif action[i] == 2:
-                    action_per_batch += [qml.RX(input[i][idx].resolve_conj().numpy(), wires=idx)]
+                    action_per_batch += [
+                        qml.RX(input[i][idx].resolve_conj().numpy(), wires=idx)]
                 elif action[i] == 3:
-                    action_per_batch += [qml.RY(input[i][idx].resolve_conj().numpy(), wires=idx)]
+                    action_per_batch += [
+                        qml.RY(input[i][idx].resolve_conj().numpy(), wires=idx)]
                 elif action[i] == 4:
-                    action_per_batch += [qml.RZ(input[i][idx].resolve_conj().numpy(), wires=idx)]
+                    action_per_batch += [
+                        qml.RZ(input[i][idx].resolve_conj().numpy(), wires=idx)]
                 elif action[i] == 5:
                     action_per_batch += [qml.CNOT(wires=[qubit, next_qubit])]
             action_set += [action_per_batch]
         return action_set
-
-
-    # def get_obs(self):
-    #
-    #     dev = qml.device("default.qubit", wires=self.qubits)
-    #
-    #     gates_x1 = self.circuit_gates_x1
-    #     gates_x2 = self.circuit_gates_x2
-    #
-    #     @qml.qnode(dev)
-    #     def circuit(pauli):
-    #         for qubit in range(len(self.qubits)):
-    #             qml.Identity(wires=qubit)
-    #         # qml.RX(np.pi / 7, wires=3)  ##TODO Remove
-    #         # qml.RY(np.pi / 7, wires=1)
-    #         # qml.RZ(np.pi / 7, wires=0)
-    #
-    #         for gate in gates_x1:
-    #             gate
-    #
-    #         if pauli == 'X':
-    #             return [qml.expval(qml.PauliX(wires=w)) for w in
-    #                     range(len(self.qubits))]
-    #
-    #         elif pauli == 'Y':
-    #             return [qml.expval(qml.PauliY(wires=w)) for w in
-    #                     range(len(self.qubits))]
-    #
-    #         elif pauli == 'Z':
-    #             return [qml.expval(qml.PauliZ(wires=w)) for w in
-    #                     range(len(self.qubits))]
-    #
-    #     return np.concatenate((circuit('X'), circuit('Y'), circuit('Z')))
 
     def get_obs(self):
 
@@ -174,11 +144,11 @@ class QASEnv(gym.Env):
             for seq in batch_x2[::-1]:
                 for gate in seq:
                     qml.adjoint(gate).queue()
-                    # gate.queue()
 
             if pauli == 'X':
                 return [qml.expval(qml.PauliX(wires=w)) for w in
                         range(len(self.qubits))]
+                # return [qml.expval(qml.PauliX(wires=range(len(self.qubits))))]
 
             elif pauli == 'Y':
                 return [qml.expval(qml.PauliY(wires=w)) for w in
@@ -188,44 +158,40 @@ class QASEnv(gym.Env):
                 return [qml.expval(qml.PauliZ(wires=w)) for w in
                         range(len(self.qubits))]
 
-        results = []
+            elif pauli == 'F':
+                return qml.probs(wires=range(len(self.qubits)))
+
+            ## TODO 여기서 바로 prob 줄까?
+
+        pauli_measure = []
+        fidelity = []
         for batch_x1, batch_x2 in zip(gates_x1, gates_x2):
             x_obs = circuit('X', batch_x1, batch_x2)
             y_obs = circuit('Y', batch_x1, batch_x2)
             z_obs = circuit('Z', batch_x1, batch_x2)
-            results.append(np.concatenate((x_obs, y_obs, z_obs)))
+            pauli_measure.append(np.concatenate((x_obs, y_obs, z_obs)))
 
+            fidelity.append(circuit('F', batch_x1, batch_x2)[0])
 
-        return results
+        return pauli_measure, fidelity
 
-    # def get_fidelity(self):
-    #   뭔가 get_pennylane이 처음부터 만드는 것처럼 adj도 처음부터 만들어도 될 거 같은데....
-    #     dev = qml.device("default.qubit", wires=self.qubits)
-    #
-    #     @qml.qnode(dev)
-    #     def circuit():
-    #         for gate in gates:
-    #             gate
-    #         return qml.state()
-    #
-    #     return circuit
-
-    def step(self, action, X1, X2):
+    def step(self, action, X1, X2, Y_batch):
         action_gate_x1 = self.select_action(action, X1)
         action_gate_x2 = self.select_action(action, X2)
 
         self.circuit_gates_x1.append(action_gate_x1)
         self.circuit_gates_x2.append(action_gate_x2)
 
-        observation = self.get_obs()
+        observation, fidelity = self.get_obs()
 
-        fidelity = self.get_fidelity()
+        fidelity = torch.stack([torch.tensor(i) for i in fidelity])
+        fidelity = torch.nn.MSELoss()(fidelity, Y_batch)
+
         reward = fidelity - self.reward_penalty if fidelity > self.fidelity_threshold else -self.reward_penalty
         terminal = (reward > 0.) or (
-                len(self.circuit_gates) >= self.max_timesteps)
-        info = {'fidelity': fidelity, 'circuit': self.get_pennylane()}
+                len(self.circuit_gates_x1) >= self.max_timesteps)
 
-        return observation, reward, terminal, info
+        return observation, reward, terminal
 
 
 if __name__ == "__main__":
@@ -240,7 +206,8 @@ if __name__ == "__main__":
     batch_size = 25
 
     # Load data
-    X_train, X_test, Y_train, Y_test = data_load_and_process(reduction_size=data_size)
+    X_train, X_test, Y_train, Y_test = data_load_and_process(
+        reduction_size=data_size)
     policy = PolicyNetwork(state_size=state_size,
                            data_size=data_size,
                            action_size=action_size)
@@ -250,7 +217,7 @@ if __name__ == "__main__":
 
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
-        state = env.reset()
+        state, _ = env.reset()
         done = False
         log_probs = []
         rewards = []
@@ -261,9 +228,11 @@ if __name__ == "__main__":
             dists = [torch.distributions.Categorical(prob) for prob in probs]
             actions = [dist.sample().item() for dist in dists]
 
-            next_state, reward, done, info = env.step(actions, X1_batch, X2_batch)
+            next_state, reward, done = env.step(actions, X1_batch,
+                                                X2_batch, Y_batch)
 
-            log_probs.append(dists.log_prob(torch.tensor(actions)))
+
+            log_probs.append([d.log_prob(torch.tensor(a)) for a, d in zip(actions, dists)])
             rewards.append(reward)
 
             state = next_state
