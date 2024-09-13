@@ -105,9 +105,9 @@ class QASEnv(gym.Env):
             self.select_action([0 for _ in range(25)], None)]
         return self.get_obs()
 
-    def select_action(self, action, input):  # 여기다가 input adj??
+    def select_action(self, action, input):
         action_set = []
-        for i in range(len(action)):  # JW batch size 만큼 iter
+        for i in range(len(action)):
             action_per_batch = []
             for idx, qubit in enumerate(self.qubits):
                 next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
@@ -148,7 +148,6 @@ class QASEnv(gym.Env):
             if pauli == 'X':
                 return [qml.expval(qml.PauliX(wires=w)) for w in
                         range(len(self.qubits))]
-                # return [qml.expval(qml.PauliX(wires=range(len(self.qubits))))]
 
             elif pauli == 'Y':
                 return [qml.expval(qml.PauliY(wires=w)) for w in
@@ -160,8 +159,6 @@ class QASEnv(gym.Env):
 
             elif pauli == 'F':
                 return qml.probs(wires=range(len(self.qubits)))
-
-            ## TODO 여기서 바로 prob 줄까?
 
         pauli_measure = []
         fidelity = []
@@ -184,14 +181,19 @@ class QASEnv(gym.Env):
 
         observation, fidelity = self.get_obs()
 
+        loss_fn = torch.nn.MSELoss(reduction='none')  # TODO Need discussion
         fidelity = torch.stack([torch.tensor(i) for i in fidelity])
-        fidelity = torch.nn.MSELoss()(fidelity, Y_batch)
+        fidelity_loss = loss_fn(fidelity, Y_batch)
 
-        reward = fidelity - self.reward_penalty if fidelity > self.fidelity_threshold else -self.reward_penalty
-        terminal = (reward > 0.) or (
-                len(self.circuit_gates_x1) >= self.max_timesteps)
+        rewards = torch.where(fidelity_loss > self.fidelity_threshold,
+                              fidelity_loss - self.reward_penalty,
+                              -self.reward_penalty * torch.ones_like(
+                                  fidelity_loss)
+                              )
+        terminal = (rewards > 0.).all() or (  # TODO percent로?
+                    len(self.circuit_gates_x1) >= self.max_timesteps)
 
-        return observation, reward, terminal
+        return observation, rewards, terminal
 
 
 if __name__ == "__main__":
@@ -231,25 +233,28 @@ if __name__ == "__main__":
             next_state, reward, done = env.step(actions, X1_batch,
                                                 X2_batch, Y_batch)
 
-
-            log_probs.append([d.log_prob(torch.tensor(a)) for a, d in zip(actions, dists)])
+            log_prob_t = torch.stack(
+                [d.log_prob(torch.tensor(a)) for a, d in zip(actions, dists)])
+            log_probs.append(log_prob_t)
             rewards.append(reward)
 
             state = next_state
 
-        # Compute return
         returns = []
-        G = 0
-        for r in reversed(rewards):
-            G = r + gamma * G
+        G = torch.zeros(batch_size)
+        for r_t in reversed(rewards):
+            G = r_t + gamma * G
             returns.insert(0, G)
 
-        # Convert returns to tensor
-        returns = torch.tensor(returns, dtype=torch.float32)
+        # Convert returns and log_probs to tensors
+        returns = torch.stack(returns)  # shape: (T, batch_size)
+        log_probs = torch.stack(log_probs)  # shape: (T, batch_size)
 
-        # Update policy network
-        policy_loss = -torch.stack(log_probs).float() * returns
-        policy_loss = policy_loss.mean()
+        # Optionally normalize returns to reduce variance
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+
+        # Compute policy loss
+        policy_loss = -torch.mean(log_probs * returns)
 
         optimizer.zero_grad()
         policy_loss.backward()
