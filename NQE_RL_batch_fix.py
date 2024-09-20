@@ -1,9 +1,3 @@
-"""This code is a legacy code.
-This code results 25 action for a single batch where size 25.
-Above feature makes 25 circuits, which cannot be used for QCNN purpose.
-The embedding circuit for QCNN must be a single circuit, rather than 1.
-"""
-
 import gym
 import pennylane as qml
 import tensorflow as tf
@@ -86,7 +80,7 @@ class PolicyNetwork(nn.Module):
         x = torch.concat([x1, x2, x_state], 1)
         action_probs = torch.softmax(self.action_select(x), dim=-1)
 
-        return action_probs
+        return action_probs.mean(dim=0)
 
 
 class QASEnv(gym.Env):
@@ -96,6 +90,7 @@ class QASEnv(gym.Env):
             fidelity_threshold: float = 0.95,
             reward_penalty: float = 0.01,
             max_timesteps: int = 20,
+            batch_size: int = 25
     ):
         super().__init__()
         self.simulator = qml.device('default.qubit', wires=num_of_qubit)
@@ -103,8 +98,10 @@ class QASEnv(gym.Env):
         self.fidelity_threshold = fidelity_threshold
         self.reward_penalty = reward_penalty
         self.max_timesteps = max_timesteps
+        self.batch_size = batch_size
 
     def reset(self):
+        identity = 0
         self.circuit_gates_x1 = [
             self.select_action([0 for _ in range(25)], None)]
         self.circuit_gates_x2 = [
@@ -113,24 +110,24 @@ class QASEnv(gym.Env):
 
     def select_action(self, action, input):
         action_set = []
-        for i in range(len(action)):
+        for i in range(self.batch_size):
             action_per_batch = []
             for idx, qubit in enumerate(self.qubits):
                 next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
-                if action[i] == 0:
+                if action == 0:
                     action_per_batch += [qml.Identity(wires=idx)]
-                elif action[i] == 1:
+                elif action == 1:
                     action_per_batch += [qml.Hadamard(wires=idx)]
-                elif action[i] == 2:
+                elif action == 2:
                     action_per_batch += [
                         qml.RX(input[i][idx].resolve_conj().numpy(), wires=idx)]
-                elif action[i] == 3:
+                elif action == 3:
                     action_per_batch += [
                         qml.RY(input[i][idx].resolve_conj().numpy(), wires=idx)]
-                elif action[i] == 4:
+                elif action == 4:
                     action_per_batch += [
                         qml.RZ(input[i][idx].resolve_conj().numpy(), wires=idx)]
-                elif action[i] == 5:
+                elif action == 5:
                     action_per_batch += [qml.CNOT(wires=[qubit, next_qubit])]
             action_set += [action_per_batch]
         return action_set
@@ -187,19 +184,15 @@ class QASEnv(gym.Env):
 
         observation, fidelity = self.get_obs()
 
-        loss_fn = torch.nn.MSELoss(reduction='none')  # TODO Need discussion
+        loss_fn = torch.nn.MSELoss()  # TODO Need discussion
         fidelity = torch.stack([torch.tensor(i) for i in fidelity])
         fidelity_loss = loss_fn(fidelity, Y_batch)
 
-        rewards = torch.where(fidelity_loss > self.fidelity_threshold,
-                              fidelity_loss - self.reward_penalty,
-                              -self.reward_penalty * torch.ones_like(
-                                  fidelity_loss)
-                              )
-        terminal = (rewards > 0.).all() or (  # TODO percent로?
-                len(self.circuit_gates_x1) >= self.max_timesteps)
+        reward = fidelity_loss - self.reward_penalty if fidelity_loss > self.fidelity_threshold else -self.reward_penalty
+        terminal = (reward > 0.) or (
+                    len(self.circuit_gates_x1) >= self.max_timesteps)
 
-        return observation, rewards, terminal, self.circuit_gates_x1
+        return observation, reward, terminal, self.circuit_gates_x1
 
 
 if __name__ == "__main__":
@@ -221,7 +214,7 @@ if __name__ == "__main__":
                            action_size=action_size)
     optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
 
-    env = QASEnv(num_of_qubit=data_size)
+    env = QASEnv(num_of_qubit=data_size, batch_size=batch_size)
 
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
@@ -232,35 +225,31 @@ if __name__ == "__main__":
 
         while not done:
             state_tensor = state_to_tensor(state)
-            probs = policy.forward(state_tensor, X1_batch, X2_batch)
-            dists = [torch.distributions.Categorical(prob) for prob in probs]
-            actions = [dist.sample().item() for dist in dists]
+            prob = policy.forward(state_tensor, X1_batch, X2_batch)
+            dist = torch.distributions.Categorical(prob)
+            action = dist.sample().item()
 
-            next_state, reward, done, recon = env.step(actions, X1_batch,
+            next_state, reward, done, recon = env.step(action, X1_batch,
                                                        X2_batch, Y_batch)
 
-            log_prob_t = torch.stack(
-                [d.log_prob(torch.tensor(a)) for a, d in zip(actions, dists)])
-            log_probs.append(log_prob_t)
+            log_prob = dist.log_prob(torch.tensor(action))
+            log_probs.append(log_prob)
             rewards.append(reward)
 
             state = next_state
 
         returns = []
-        G = torch.zeros(batch_size)
+        G = 0
         for r_t in reversed(rewards):
             G = r_t + gamma * G
             returns.insert(0, G)
 
-        # Convert returns and log_probs to tensors
-        returns = torch.stack(returns)  # shape: (T, batch_size)
-        log_probs = torch.stack(log_probs)  # shape: (T, batch_size)
+        # Convert returns to tensor
+        returns = torch.tensor(returns, dtype=torch.float32)
 
-        # Optionally normalize returns to reduce variance
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-
-        # Compute policy loss
-        policy_loss = -torch.mean(log_probs * returns)
+        # Update policy network
+        policy_loss = -torch.stack(log_probs).float() * returns
+        policy_loss = policy_loss.mean()
 
         optimizer.zero_grad()
         policy_loss.backward()
@@ -270,8 +259,3 @@ if __name__ == "__main__":
 
     print('Training Complete')
 
-
-"""
-Recon이 data embedding을 만드는 circuit이 될까?
-생각해보니 action이 batch마다 만들어져서 25개니까 circuit이 하나가 아니네....
-"""
