@@ -97,7 +97,7 @@ class QASEnv(gym.Env):
             num_of_qubit: int = 4,
             fidelity_threshold: float = 0.95,
             reward_penalty: float = 0.01,
-            max_timesteps: int = 20,
+            max_timesteps: int = 14 * 3,
             batch_size: int = 25
     ):
         super().__init__()
@@ -351,8 +351,8 @@ if __name__ == "__main__":
     learning_rate = 0.01
     state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
     action_size = 6  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 5
-    iterations = 7
+    episodes = 50
+    iterations = 200
     batch_size = 25
 
     # Load data
@@ -364,6 +364,8 @@ if __name__ == "__main__":
     optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
 
     env = QASEnv(num_of_qubit=data_size, batch_size=batch_size)
+
+    policy_losses = []
 
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
@@ -401,14 +403,19 @@ if __name__ == "__main__":
         # Update policy network
         policy_loss = -torch.stack(log_probs).float() * returns
         policy_loss = policy_loss.mean()
+        policy_losses.append(policy_loss)
 
         optimizer.zero_grad()
         policy_loss.backward()
         optimizer.step()
 
-        print(f'Episode {episode + 1}/{episodes} complete.')
+        print(f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
 
     print('Training Complete')
+
+    policy_losses = [loss.detach().numpy() for loss in policy_losses]
+    plt.plot(policy_losses)
+    plt.savefig('RL_single.png')
 
     model = Model_Fidelity(action_list)
     model.train()
@@ -435,7 +442,7 @@ if __name__ == "__main__":
     model_transform = x_transform()
     model_transform.load_state_dict(torch.load("model.pt"))
 
-    steps = 5
+    steps = 100
     learning_rate = 0.01
     batch_size = 25
 
@@ -459,7 +466,7 @@ if __name__ == "__main__":
     ax.set_title("QCNN Loss Histories")
     ax.legend()
 
-    fig.savefig('fig.png')
+    fig.savefig('fig_only_RL.png')
 
     accuracies_without_NQE, accuracies_with_NQE = [], []
 

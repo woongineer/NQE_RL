@@ -414,7 +414,7 @@ if __name__ == "__main__":
     learning_rate = 0.01
     state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
     action_size = 6  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 200
+    episodes = 50
     iterations = 200
     batch_size = 25
     N_layers = 3
@@ -428,6 +428,8 @@ if __name__ == "__main__":
     optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
 
     env = QASEnv(num_of_qubit=data_size, batch_size=batch_size)
+
+    policy_losses = []
 
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
@@ -465,14 +467,19 @@ if __name__ == "__main__":
         # Update policy network
         policy_loss = -torch.stack(log_probs).float() * returns
         policy_loss = policy_loss.mean()
+        policy_losses.append(policy_loss)
 
         optimizer.zero_grad()
         policy_loss.backward()
         optimizer.step()
 
-        print(f'Episode {episode + 1}/{episodes} complete.')
+        print(f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
 
     print('Training Complete')
+
+    policy_losses = [loss.detach().numpy() for loss in policy_losses]
+    plt.plot(policy_losses)
+    plt.savefig('RL_compare.png')
 
     model_RL = Model_Fidelity_RL(action_list)
     model_ZZ = Model_Fidelity_ZZ()
