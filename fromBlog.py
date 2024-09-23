@@ -202,7 +202,7 @@ if __name__ == "__main__":
     # load data
     X_train, X_test, Y_train, Y_test = data_load_and_process()
 
-    N_layers = 3
+    N_layers = 1
 
     batch_size = 25
     iterations = 7
