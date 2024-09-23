@@ -88,7 +88,12 @@ class PolicyNetwork(nn.Module):
         x = torch.concat([x1, x2, x_state], 1)
         action_probs = torch.softmax(self.action_select(x), dim=-1)
 
-        return action_probs.mean(dim=0)
+        action_probs_mean = action_probs.mean(dim=0)
+        epsilon = 0.05
+        adjust_action_probs_mean = action_probs_mean + epsilon
+        normed_action_probs_mean = adjust_action_probs_mean / adjust_action_probs_mean.sum()
+
+        return normed_action_probs_mean
 
 
 class QASEnv(gym.Env):
@@ -414,7 +419,7 @@ if __name__ == "__main__":
     learning_rate = 0.01
     state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
     action_size = 6  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 50
+    episodes = 250
     iterations = 200
     batch_size = 25
     N_layers = 3
@@ -438,12 +443,22 @@ if __name__ == "__main__":
         log_probs = []
         rewards = []
         action_list = []
+        action = 0
 
         while not done:
             state_tensor = state_to_tensor(state)
             prob = policy.forward(state_tensor, X1_batch, X2_batch)
             dist = torch.distributions.Categorical(prob)
-            action = dist.sample().item()
+
+            action_candidate = action
+            trial = 0
+            while action_candidate in [action, 0]:
+                while action_candidate == 0:
+                    trial += 1
+                    if trial > 1:
+                        print(f"{trial-1}th trial")
+                    action_candidate = dist.sample().item()
+            action = action_candidate
 
             next_state, reward, done = env.step(action, X1_batch, X2_batch,
                                                 Y_batch)

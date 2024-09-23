@@ -88,7 +88,12 @@ class PolicyNetwork(nn.Module):
         x = torch.concat([x1, x2, x_state], 1)
         action_probs = torch.softmax(self.action_select(x), dim=-1)
 
-        return action_probs.mean(dim=0)
+        action_probs_mean = action_probs.mean(dim=0)
+        epsilon = 0.05
+        adjust_action_probs_mean = action_probs_mean + epsilon
+        normed_action_probs_mean = adjust_action_probs_mean / adjust_action_probs_mean.sum()
+
+        return normed_action_probs_mean
 
 
 class QASEnv(gym.Env):
@@ -205,6 +210,7 @@ class QASEnv(gym.Env):
 
 dev = qml.device('default.qubit', wires=4)
 
+
 class x_transform(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -309,7 +315,7 @@ def QuantumEmbedding(action_list, input):
             elif action == 4:
                 qml.RZ(input[j], wires=j)
             elif action == 5:
-                qml.CNOT(wires=[j, (j+1) % 4])
+                qml.CNOT(wires=[j, (j + 1) % 4])
 
 
 class Model_Fidelity(torch.nn.Module):
@@ -351,7 +357,7 @@ if __name__ == "__main__":
     learning_rate = 0.01
     state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
     action_size = 6  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 50
+    episodes = 250
     iterations = 200
     batch_size = 25
 
@@ -374,12 +380,21 @@ if __name__ == "__main__":
         log_probs = []
         rewards = []
         action_list = []
+        action = 0
 
         while not done:
             state_tensor = state_to_tensor(state)
             prob = policy.forward(state_tensor, X1_batch, X2_batch)
             dist = torch.distributions.Categorical(prob)
-            action = dist.sample().item()
+
+            action_candidate = action
+            trial = 0
+            while action_candidate in [action, 0]:
+                trial += 1
+                if trial > 1:
+                    print(f"{trial-1}th trial, {action}")
+                action_candidate = dist.sample().item()
+            action = action_candidate
 
             next_state, reward, done = env.step(action, X1_batch, X2_batch,
                                                 Y_batch)
@@ -409,7 +424,8 @@ if __name__ == "__main__":
         policy_loss.backward()
         optimizer.step()
 
-        print(f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
+        print(
+            f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
 
     print('Training Complete')
 
@@ -480,7 +496,5 @@ if __name__ == "__main__":
 
     print(f"Accuracy without NQE: {accuracy_without_NQE:.3f}")
     print(f"Accuracy with NQE: {accuracy_with_NQE:.3f}")
-
-
 
     print('end')
