@@ -374,7 +374,7 @@ class Model_Fidelity_ZZ(torch.nn.Module):
         x = self.qlayer1(x)
         """you can use 
         fig, ax = qml.draw_mpl(circuit)(x)
-        fig.savefig('dd.png')
+        fig.savefig('RL/dd.png')
         to see the circuit
         """
         return x[:, 0]
@@ -400,7 +400,7 @@ class Model_Fidelity_RL(torch.nn.Module):
         x = self.qlayer1(x)
         """you can use 
         fig, ax = qml.draw_mpl(circuit)(x)
-        fig.savefig('dd.png')
+        fig.savefig('RL/dd.png')
         to see the circuit
         """
         return x[:, 0]
@@ -453,11 +453,10 @@ if __name__ == "__main__":
             action_candidate = action
             trial = 0
             while action_candidate in [action, 0]:
-                while action_candidate == 0:
-                    trial += 1
-                    if trial > 1:
-                        print(f"{trial-1}th trial")
-                    action_candidate = dist.sample().item()
+                # trial += 1
+                # if trial > 1:
+                #     print(f"{trial-1}th trial, {action}")
+                action_candidate = dist.sample().item()
             action = action_candidate
 
             next_state, reward, done = env.step(action, X1_batch, X2_batch,
@@ -494,7 +493,7 @@ if __name__ == "__main__":
 
     policy_losses = [loss.detach().numpy() for loss in policy_losses]
     plt.plot(policy_losses)
-    plt.savefig('RL_compare.png')
+    plt.savefig('RL/RL_compare.png')
 
     model_RL = Model_Fidelity_RL(action_list)
     model_ZZ = Model_Fidelity_ZZ()
@@ -522,16 +521,16 @@ if __name__ == "__main__":
             print(
                 f"Iterations: {it} Loss_RL: {loss_RL.item()} Loss_ZZ: {loss_ZZ.item()}")
 
-    torch.save(model_RL.state_dict(), "model_RL.pt")
-    torch.save(model_ZZ.state_dict(), "model_ZZ.pt")
+    torch.save(model_RL.state_dict(), "RL/model_RL.pt")
+    torch.save(model_ZZ.state_dict(), "RL/model_ZZ.pt")
 
     Y_train = [-1 if y == 0 else 1 for y in Y_train]
     Y_test = [-1 if y == 0 else 1 for y in Y_test]
 
     model_transform_RL = x_transform()
     model_transform_ZZ = x_transform()
-    model_transform_RL.load_state_dict(torch.load("model_RL.pt"))
-    model_transform_ZZ.load_state_dict(torch.load("model_ZZ.pt"))
+    model_transform_RL.load_state_dict(torch.load("RL/model_RL.pt"))
+    model_transform_ZZ.load_state_dict(torch.load("RL/model_ZZ.pt"))
 
     steps = 100
     learning_rate = 0.01
@@ -576,7 +575,7 @@ if __name__ == "__main__":
     ax.set_title("QCNN Loss Histories")
     ax.legend()
 
-    fig.savefig('fig.png')
+    fig.savefig('RL/fig.png')
 
     accuracies_without_NQE_RL, accuracies_with_NQE_RL = [], []
     accuracies_without_NQE_ZZ, accuracies_with_NQE_ZZ = [], []

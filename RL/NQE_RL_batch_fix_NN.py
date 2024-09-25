@@ -450,13 +450,13 @@ if __name__ == "__main__":
         if it % 3 == 0:
             print(f"Iterations: {it} Loss: {loss.item()}")
 
-    torch.save(model.state_dict(), "model.pt")
+    torch.save(model.state_dict(), "../model.pt")
 
     Y_train = [-1 if y == 0 else 1 for y in Y_train]
     Y_test = [-1 if y == 0 else 1 for y in Y_test]
 
     model_transform = x_transform()
-    model_transform.load_state_dict(torch.load("model.pt"))
+    model_transform.load_state_dict(torch.load("../model.pt"))
 
     steps = 100
     learning_rate = 0.01
