@@ -17,8 +17,26 @@ from torch import nn
 
 
 # Load and process data
-def data_load_and_process(reduction_size: int = 4):
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+def data_load_and_process(dataset, reduction_size: int = 4):
+    if dataset == 'mnist':
+        (x_train, y_train), (
+        x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    elif dataset == 'kmnist':
+        # Path to training images and corresponding labels provided as numpy arrays
+        kmnist_train_images_path = "RL/kmnist/kmnist-train-imgs.npz"
+        kmnist_train_labels_path = "RL/kmnist/kmnist-train-labels.npz"
+
+        # Path to the test images and corresponding labels
+        kmnist_test_images_path = "RL/kmnist/kmnist-test-imgs.npz"
+        kmnist_test_labels_path = "RL/kmnist/kmnist-test-labels.npz"
+
+        x_train = np.load(kmnist_train_images_path)['arr_0']
+        y_train = np.load(kmnist_train_labels_path)['arr_0']
+
+        # Load the test data from the corresponding npz files
+        x_test = np.load(kmnist_test_images_path)['arr_0']
+        y_test = np.load(kmnist_test_labels_path)['arr_0']
+
     x_train, x_test = x_train[..., np.newaxis] / 255.0, x_test[
         ..., np.newaxis] / 255.0
     train_filter_tf = np.where((y_train == 0) | (y_train == 1))
@@ -51,14 +69,25 @@ def new_data(batch_size, X, Y):
         X1_new.append(X[n])
         X2_new.append(X[m])
         Y_new.append(1 if Y[n] == Y[m] else 0)
-    return torch.tensor(X1_new).float(), torch.tensor(
-        X2_new).float(), torch.tensor(Y_new).float()
+
+    # X1_new 처리
+    X1_new_array = np.array(X1_new)
+    X1_new_tensor = torch.from_numpy(X1_new_array).float()
+
+    # X2_new 처리
+    X2_new_array = np.array(X2_new)
+    X2_new_tensor = torch.from_numpy(X2_new_array).float()
+
+    # Y_new 처리
+    Y_new_array = np.array(Y_new)
+    Y_new_tensor = torch.from_numpy(Y_new_array).float()
+    return X1_new_tensor, X2_new_tensor, Y_new_tensor
 
 
 def state_to_tensor(state):
     pennylane_to_torch = [torch.tensor(i) for i in state]
     stacked = torch.stack(pennylane_to_torch)
-    return torch.tensor(stacked, dtype=torch.float32)
+    return stacked.float()
 
 
 class PolicyNetwork(nn.Module):
@@ -419,14 +448,15 @@ if __name__ == "__main__":
     learning_rate = 0.01
     state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
     action_size = 6  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 250
+    episodes = 50
     iterations = 200
+    steps = 100
     batch_size = 25
     N_layers = 3
 
     # Load data
-    X_train, X_test, Y_train, Y_test = data_load_and_process(
-        reduction_size=data_size)
+    X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='kmnist',
+                                                             reduction_size=data_size)
     policy = PolicyNetwork(state_size=state_size,
                            data_size=data_size,
                            action_size=action_size)
@@ -487,13 +517,14 @@ if __name__ == "__main__":
         policy_loss.backward()
         optimizer.step()
 
-        print(f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
+        print(
+            f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
 
     print('Training Complete')
 
     policy_losses = [loss.detach().numpy() for loss in policy_losses]
     plt.plot(policy_losses)
-    plt.savefig('RL/RL_compare.png')
+    plt.savefig('RL/policy_loss.png')
 
     model_RL = Model_Fidelity_RL(action_list)
     model_ZZ = Model_Fidelity_ZZ()
@@ -529,12 +560,8 @@ if __name__ == "__main__":
 
     model_transform_RL = x_transform()
     model_transform_ZZ = x_transform()
-    model_transform_RL.load_state_dict(torch.load("RL/model_RL.pt"))
-    model_transform_ZZ.load_state_dict(torch.load("RL/model_ZZ.pt"))
-
-    steps = 100
-    learning_rate = 0.01
-    batch_size = 25
+    model_transform_RL.load_state_dict(torch.load("RL/model_RL.pt", weights_only=True))
+    model_transform_ZZ.load_state_dict(torch.load("RL/model_ZZ.pt", weights_only=True))
 
     loss_history_without_NQE_RL, weight_without_NQE_RL = circuit_training(
         X_train,
@@ -575,7 +602,7 @@ if __name__ == "__main__":
     ax.set_title("QCNN Loss Histories")
     ax.legend()
 
-    fig.savefig('RL/fig.png')
+    fig.savefig('RL/QCNN_loss_history_compare.png')
 
     accuracies_without_NQE_RL, accuracies_with_NQE_RL = [], []
     accuracies_without_NQE_ZZ, accuracies_with_NQE_ZZ = [], []
