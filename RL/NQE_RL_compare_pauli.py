@@ -143,7 +143,6 @@ class QASEnv(gym.Env):
         self.batch_size = batch_size
 
     def reset(self):
-        identity = 0
         self.circuit_gates_x1 = [
             self.select_action([0 for _ in range(25)], None)]
         self.circuit_gates_x2 = [
@@ -182,7 +181,7 @@ class QASEnv(gym.Env):
         gates_x2 = [list(row) for row in zip(*self.circuit_gates_x2)]
 
         @qml.qnode(dev)
-        def circuit(pauli, batch_x1, batch_x2):
+        def circuit(batch_x1, batch_x2):
             for seq in batch_x1:
                 for gate in seq:
                     gate.queue()
@@ -190,32 +189,17 @@ class QASEnv(gym.Env):
                 for gate in seq:
                     qml.adjoint(gate).queue()
 
-            if pauli == 'X':
-                return [qml.expval(qml.PauliX(wires=w)) for w in
-                        range(len(self.qubits))]
+            return qml.probs(wires=range(len(self.qubits)))
 
-            elif pauli == 'Y':
-                return [qml.expval(qml.PauliY(wires=w)) for w in
-                        range(len(self.qubits))]
+        measure_probs = []
+        measure_0s = []
 
-            elif pauli == 'Z':
-                return [qml.expval(qml.PauliZ(wires=w)) for w in
-                        range(len(self.qubits))]
-
-            elif pauli == 'F':
-                return qml.probs(wires=range(len(self.qubits)))
-
-        pauli_measure = []
-        fidelity = []
         for batch_x1, batch_x2 in zip(gates_x1, gates_x2):
-            x_obs = circuit('X', batch_x1, batch_x2)
-            y_obs = circuit('Y', batch_x1, batch_x2)
-            z_obs = circuit('Z', batch_x1, batch_x2)
-            pauli_measure.append(np.concatenate((x_obs, y_obs, z_obs)))
+            measure_prob = circuit(batch_x1, batch_x2)
+            measure_probs.append(measure_prob)
+            measure_0s.append(measure_prob[0])
 
-            fidelity.append(circuit('F', batch_x1, batch_x2)[0])
-
-        return pauli_measure, fidelity
+        return measure_probs, measure_0s
 
     def step(self, action, X1, X2, Y_batch):
         action_gate_x1 = self.select_action(action, X1)
@@ -224,17 +208,17 @@ class QASEnv(gym.Env):
         self.circuit_gates_x1.append(action_gate_x1)
         self.circuit_gates_x2.append(action_gate_x2)
 
-        observation, fidelity = self.get_obs()
+        measure_probs, measure_0s = self.get_obs()
 
         loss_fn = torch.nn.MSELoss()  # TODO Need discussion
-        fidelity = torch.stack([torch.tensor(i) for i in fidelity])
-        fidelity_loss = loss_fn(fidelity, Y_batch)
+        measure_0s = torch.stack([torch.tensor(i) for i in measure_0s])
+        fidelity_loss = loss_fn(measure_0s, Y_batch)
 
         reward = fidelity_loss - self.reward_penalty if fidelity_loss > self.fidelity_threshold else -self.reward_penalty
         terminal = (reward > 0.) or (
                 len(self.circuit_gates_x1) >= self.max_timesteps)
 
-        return observation, reward, terminal
+        return measure_probs, reward, terminal
 
 
 dev = qml.device('default.qubit', wires=4)
@@ -446,7 +430,7 @@ if __name__ == "__main__":
     data_size = 4  # JW Data reduction size from 256->, determine # of qubit
     gamma = 0.98
     learning_rate = 0.01
-    state_size = 3 * data_size  # *3 because of Pauli X,Y,Z
+    state_size = data_size ** 2
     action_size = 6  # Number of possible actions, RX, RY, RZ, H, CX
     episodes = 50
     iterations = 200
@@ -468,7 +452,7 @@ if __name__ == "__main__":
 
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
-        state, _ = env.reset()
+        measure_probs, _ = env.reset()
         done = False
         log_probs = []
         rewards = []
@@ -476,7 +460,7 @@ if __name__ == "__main__":
         action = 0
 
         while not done:
-            state_tensor = state_to_tensor(state)
+            state_tensor = state_to_tensor(measure_probs)
             prob = policy.forward(state_tensor, X1_batch, X2_batch)
             dist = torch.distributions.Categorical(prob)
 
@@ -520,11 +504,20 @@ if __name__ == "__main__":
         print(
             f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
 
+        early_stop = 7
+        if len(policy_losses) >= early_stop:
+            last_losses = [loss.detach().item() for loss in
+                           policy_losses[-early_stop:]]
+            if len(set(last_losses)) == 1:
+                print('Episode early stopped')
+                break
+
+
     print('Training Complete')
 
     policy_losses = [loss.detach().numpy() for loss in policy_losses]
     plt.plot(policy_losses)
-    plt.savefig('RL/policy_loss.png')
+    plt.savefig('/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/policy_loss_copy.png')
 
     model_RL = Model_Fidelity_RL(action_list)
     model_ZZ = Model_Fidelity_ZZ()
@@ -552,8 +545,8 @@ if __name__ == "__main__":
             print(
                 f"Iterations: {it} Loss_RL: {loss_RL.item()} Loss_ZZ: {loss_ZZ.item()}")
 
-    torch.save(model_RL.state_dict(), "RL/model_RL.pt")
-    torch.save(model_ZZ.state_dict(), "RL/model_ZZ.pt")
+    torch.save(model_RL.state_dict(), "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/model_RL_copy.pt")
+    torch.save(model_ZZ.state_dict(), "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/model_ZZ_copy.pt")
 
     Y_train = [-1 if y == 0 else 1 for y in Y_train]
     Y_test = [-1 if y == 0 else 1 for y in Y_test]
@@ -561,9 +554,9 @@ if __name__ == "__main__":
     model_transform_RL = x_transform()
     model_transform_ZZ = x_transform()
     model_transform_RL.load_state_dict(
-        torch.load("RL/model_RL.pt", weights_only=True))
+        torch.load("/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/model_RL_copy.pt", weights_only=True))
     model_transform_ZZ.load_state_dict(
-        torch.load("RL/model_ZZ.pt", weights_only=True))
+        torch.load("/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/model_ZZ_copy.pt", weights_only=True))
 
     loss_history_without_NQE_RL, weight_without_NQE_RL = circuit_training(
         X_train,
@@ -604,7 +597,7 @@ if __name__ == "__main__":
     ax.set_title("QCNN Loss Histories")
     ax.legend()
 
-    fig.savefig('RL/QCNN_loss_history_compare.png')
+    fig.savefig('/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/QCNN_loss_history_compare_copy.png')
 
     accuracies_without_NQE_RL, accuracies_with_NQE_RL = [], []
     accuracies_without_NQE_ZZ, accuracies_with_NQE_ZZ = [], []
