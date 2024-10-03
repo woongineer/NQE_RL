@@ -134,7 +134,7 @@ def generate_action_sequences(policy, env, X_batch, max_timesteps):
         X2_new = torch.tensor([x.numpy()], dtype=torch.float32)
         state, _ = env.reset()
         action_list = []
-        prev_action = torch.tensor([999 for _ in range(env.batch_size)])
+        prev_action = torch.tensor([999 for _ in range(env.NQE_batch_size)])
         timestep = 0
 
         while timestep < max_timesteps:

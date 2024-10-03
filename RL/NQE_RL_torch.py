@@ -226,7 +226,7 @@ class QASEnv(gym.Env):
         gates_x1 = [list(row) for row in zip(*self.circuit_gates_x1)]
         gates_x2 = [list(row) for row in zip(*self.circuit_gates_x2)]
 
-        @qml.qnode(dev)
+        @qml.qnode(dev, interface="torch")
         def circuit(batch_x1, batch_x2):
             for seq in batch_x1:
                 for gate in seq:
@@ -256,7 +256,7 @@ class QASEnv(gym.Env):
     def get_obs_eval(self):
         dev = qml.device("default.qubit", wires=self.qubits)
 
-        @qml.qnode(dev)
+        @qml.qnode(dev, interface="torch")
         def circuit(x):
             for seq in x:
                 for gate in seq:
@@ -473,15 +473,15 @@ if __name__ == "__main__":
 
     plt.plot(NQE_losses)
     plt.savefig(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_loss.png')
+        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_loss_torch.png')
 
     torch.save(NQE_model.state_dict(),
-               "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model.pt")
+               "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model_torch.pt")
 
     # NQE model load
     NQE_model_transform = XTransform()
     NQE_model_transform.load_state_dict(torch.load(
-        "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model.pt", weights_only=True))
+        "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model_torch.pt", weights_only=True))
 
     # RL part
     policy = PolicyNetwork(state_size=state_size, action_size=action_size)
@@ -569,15 +569,15 @@ if __name__ == "__main__":
     policy_losses = [loss.detach().numpy() for loss in policy_losses]
     plt.plot(policy_losses)
     plt.savefig(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/policy_loss.png')
+        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/policy_loss_torch.png')
     plt.clf()
 
     # RL load
     torch.save(policy.state_dict(),
-               '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/trained_policy.pth')
+               '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/trained_policy_torch.pth')
     policy = PolicyNetwork(state_size=state_size, action_size=action_size)
     policy.load_state_dict(torch.load(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/trained_policy.pth', weights_only=True))
+        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/trained_policy_torch.pth', weights_only=True))
     policy.eval()
 
     # Y data change for QCNN
@@ -615,7 +615,7 @@ if __name__ == "__main__":
     ax.legend()
 
     fig.savefig(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/fig.png')
+        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/fig_torch.png')
 
     prediction_with_none = [QCNN_classifier(weight_with_none, x, scheme=None)
                             for x in X_test]
