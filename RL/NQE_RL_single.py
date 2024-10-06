@@ -150,28 +150,37 @@ class XTransform(torch.nn.Module):
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, num_of_qubit):
         super(PolicyNetwork, self).__init__()
         self.state_linear_relu_stack = nn.Sequential(
             nn.Linear(state_size, state_size * 2),
             nn.ReLU(),
-            nn.Linear(state_size * 2, state_size * 4),
-            nn.ReLU(),
-            nn.Linear(state_size * 4, state_size * 2),
-            nn.ReLU(),
-            nn.Linear(state_size * 2, state_size)
+            nn.Linear(state_size * 2, state_size),
         )
-        self.action_select = nn.Linear(state_size, action_size)
+        # qubit 별로 다른 model 적용하기
+        self.action_select = nn.ModuleList(
+            [nn.Sequential(
+                nn.Linear(state_size, action_size * 2),
+                nn.ReLU(),
+                nn.Linear(action_size * 2, action_size),
+            ) for _ in range(num_of_qubit)]
+        )
 
     def forward(self, state):
+        # state를 쫙 펴줘야 할듯
+        state = state.view(-1)
         state_new = self.state_linear_relu_stack(state)
-        action_probs = torch.softmax(self.action_select(state_new), dim=-1)
 
+        action_probs = []
         epsilon = 0.03
-        adjust_action_probs = (action_probs + epsilon) / (
-                1 + epsilon * action_size)
 
-        return adjust_action_probs
+        for qubit_action_select in self.action_select:
+            action_prob = torch.softmax(qubit_action_select(state_new), dim=-1)
+            adjust_action_probs = (action_prob + epsilon) / (
+                        1 + epsilon * action_size)
+            action_probs.append(adjust_action_probs)
+
+        return torch.stack(action_probs, dim=0)
 
 
 class QASEnv(gym.Env):
@@ -188,36 +197,35 @@ class QASEnv(gym.Env):
         self.batch_size = batch_size
 
     def reset(self):
-        self.circuit_gates_x1 = [
-            self.select_action([None for _ in range(self.batch_size)], None)]
-        self.circuit_gates_x2 = [
-            self.select_action([None for _ in range(self.batch_size)], None)]
+        dummy_action = [None for _ in range(len(self.qubits))]
+        dummy_input = [[0 for _ in self.qubits] for _ in range(batch_size)]
+
+        self.circuit_gates_x1 = [self.select_action(dummy_action, dummy_input)]
+        self.circuit_gates_x2 = [self.select_action(dummy_action, dummy_input)]
         self.circuit_gates_x = []
         return self.get_obs()
 
     def select_action(self, action, input):
-        action_set = []
-        for i in range(self.batch_size):
-            action_per_batch = []
-            for idx, qubit in enumerate(self.qubits):
-                next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
-                if action[i] == None:
-                    action_per_batch += [qml.Identity(wires=idx)]
-                elif action[i] == 0:
-                    action_per_batch += [qml.Hadamard(wires=idx)]
-                elif action[i] == 1:
-                    action_per_batch += [
-                        qml.RX(input[i][idx], wires=idx)]
-                elif action[i] == 2:
-                    action_per_batch += [
-                        qml.RY(input[i][idx], wires=idx)]
-                elif action[i] == 3:
-                    action_per_batch += [
-                        qml.RZ(input[i][idx], wires=idx)]
-                elif action[i] == 4:
-                    action_per_batch += [qml.CNOT(wires=[qubit, next_qubit])]
-            action_set += [action_per_batch]
-        return action_set
+        action_sets = []
+
+        for input_batch in input:
+            action_set = []
+            for qubit in self.qubits:
+                next_qubit = (qubit + 1) % len(self.qubits)
+                if action[qubit] is None:
+                    action_set += [qml.Identity(wires=qubit)]
+                elif action[qubit] == 0:
+                    action_set += [qml.Hadamard(wires=qubit)]
+                elif action[qubit] == 1:
+                    action_set += [qml.RX(input_batch[qubit], wires=qubit)]
+                elif action[qubit] == 2:
+                    action_set += [qml.RY(input_batch[qubit], wires=qubit)]
+                elif action[qubit] == 3:
+                    action_set += [qml.RZ(input_batch[qubit], wires=qubit)]
+                elif action[qubit] == 4:
+                    action_set += [qml.CNOT(wires=[qubit, next_qubit])]
+            action_sets.append(action_set)
+        return action_sets
 
     def get_obs(self):
 
@@ -227,13 +235,13 @@ class QASEnv(gym.Env):
         gates_x2 = [list(row) for row in zip(*self.circuit_gates_x2)]
 
         @qml.qnode(dev)
-        def circuit(batch_x1, batch_x2):
-            for seq in batch_x1:
+        def circuit(x1, x2):
+            for seq in x1:
                 for gate in seq:
                     qml.apply(gate)
-            for seq in batch_x2[::-1]:
-                for gate in seq:
-                    qml.apply(qml.adjoint(gate))
+            for seq in x2[::-1]:
+                for gate in seq[::-1]:
+                    qml.adjoint(gate)
 
             return qml.probs(wires=range(len(self.qubits)))
 
@@ -281,7 +289,7 @@ class QASEnv(gym.Env):
         measure_0s = torch.stack([torch.tensor(i) for i in measure_0s])
         measure_loss = loss_fn(measure_0s, Y_batch)
 
-        reward = 1-measure_loss
+        reward = 1-measure_loss.mean()  #TODO 개별 배치마다 따로 prob을 뽑은게 아니니까 reward도 통합해야 할 듯, measure_loss를 minimize하는게 목적이니 작을수록 큰 reward
         terminal = len(self.circuit_gates_x1) >= self.max_timesteps
 
         return measure_probs, reward, terminal
@@ -428,21 +436,21 @@ def quantum_embedding_rl(x, action_list):
 if __name__ == "__main__":
     # Parameter for NQE & RL
     data_size = 4  # Data reduction size from 256->, determine # of qubit
-    batch_size = 17
+    batch_size = 3
 
     # Parameter for NQE
     N_layers = 3
-    NQE_iterations = 400
+    NQE_iterations = 3
 
     # Parameter for RL
     gamma = 0.98
     RL_learning_rate = 0.01
-    state_size = data_size ** 2
+    state_size = (data_size ** 2) * batch_size
     action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 600
+    episodes = 2
 
     # Parameters for QCNN
-    QCNN_steps = 200
+    QCNN_steps = 2
     QCNN_learning_rate = 0.01
     QCNN_batch_size = 25
 
@@ -474,6 +482,7 @@ if __name__ == "__main__":
     plt.plot(NQE_losses)
     plt.savefig(
         '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_loss.png')
+    plt.clf()
 
     torch.save(NQE_model.state_dict(),
                "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model.pt")
@@ -484,7 +493,8 @@ if __name__ == "__main__":
         "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model.pt", weights_only=True))
 
     # RL part
-    policy = PolicyNetwork(state_size=state_size, action_size=action_size)
+    policy = PolicyNetwork(state_size=state_size, action_size=action_size,
+                           num_of_qubit=data_size)
     optimizer = torch.optim.Adam(policy.parameters(), lr=RL_learning_rate)
     scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
     env = QASEnv(num_of_qubit=data_size, max_timesteps=14 * N_layers,
@@ -503,8 +513,7 @@ if __name__ == "__main__":
         done = False
         log_probs = []
         rewards = []
-        action_list = []
-        prev_action = torch.tensor([999 for _ in range(batch_size)])
+        prev_action = torch.tensor([999 for _ in range(data_size)])
 
         while not done:
             state_tensor = state_to_tensor(state)
@@ -527,22 +536,23 @@ if __name__ == "__main__":
                                                 X2_batch_transformed, Y_batch)
 
             log_prob = dist.log_prob(action.clone().detach())
-            log_probs.append(log_prob)
+            log_probs.append(log_prob.sum()) #TODO 하나의 reward를 만들기 위한 4개의 probs였으니 joint probability이고, 그거에 log를 취했으니 * -> + 로
             rewards.append(reward)
-            action_list.append(action)
 
             state = next_state
 
-        rewards = torch.stack(rewards)
-        returns = torch.zeros_like(rewards)
-        G = torch.zeros(rewards.size(1))
-        for t in reversed(range(len(rewards))):
-            G = rewards[t] + gamma * G
-            returns[t] = G
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)  #TODO norm or not?
+        returns = []
+        G = 0
+        for r in reversed(rewards):
+            G = r + gamma * G
+            returns.insert(0, G)
+
+        # Convert returns to tensor
+        returns = torch.tensor(returns, dtype=torch.float32)
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8) # TODO to norm or not? scale이 너무 크긴 한데...
 
         # Compute policy loss
-        log_probs = torch.stack(log_probs)  # Shape: [num_steps, batch_size]
+        log_probs = torch.stack(log_probs)
         policy_loss = -log_probs * returns
         policy_loss = policy_loss.mean()
         policy_losses.append(policy_loss)
@@ -554,7 +564,6 @@ if __name__ == "__main__":
 
         print(
             f'E{episode + 1}/{episodes}, loss:{policy_loss}')
-            # f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
 
         early_stop = 7
         if len(policy_losses) >= early_stop:

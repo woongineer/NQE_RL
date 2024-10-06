@@ -39,3 +39,14 @@ RL에다가 NQE를 돌리면 개별 architecture마다 x->x'를 학습할텐데,
 반면 x'에다가 RL을 학습하면, U(x)->U(x')->U(RL(x'))아닌가...?
 - RL-NQE 방식: RL generalization 가능하지만 NQE가 data specific임
 - NQE-RL 방식: NQE랑 RL둘다 generalization 됨...? 이게 맞나?
+
+[10] NQE_RL_datawise.py: 위 기준에 맞춰서 NQE를 한 다음에 그 entire x'로 RL을 하는거. 근데 이렇게 해도 QCNN학습 부분에서는 학습이 한 RL 구조당 한 batch만 돌아간다.
+
+### 2024.10.04 피드백
+아니 개별 policy로 datawise하게 quantum structure를 뽑아내는게 아니였나봄...\
+하나의 RL 모델이 entire dataset을 describe하는거를 생각했던듯...\
+탁님에게 loss를 어디서 sum을 할 지도 물어봄. log_probs들을 sum하는게 맞을 것 같다고 하는데 log_likelihood같은 얘기면 그쪽일거라 하심\
+하튼 iterative + per qubit 구조로 1개의 구조를 만들어내는게 목표다\
+per qubit 으로 하기 위해서는 CNOT을 어떻게 할 지 생각해야하는데, QAS 논문에서는 바로 다음 qubit하고 하는거로 했네?\
+https://github.com/qdevpsi3/quantum-arch-search/blob/main/src/qas_gym/utils.py#L7 \
+ㅇ
