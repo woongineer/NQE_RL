@@ -19,12 +19,12 @@ def data_load_and_process(dataset='mnist', reduction_size: int = 4):
             x_test, y_test) = tf.keras.datasets.mnist.load_data()
     elif dataset == 'kmnist':
         # Path to training images and corresponding labels provided as numpy arrays
-        kmnist_train_images_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-train-imgs.npz"
-        kmnist_train_labels_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-train-labels.npz"
+        kmnist_train_images_path = "/RL/kmnist/kmnist-train-imgs.npz"
+        kmnist_train_labels_path = "/RL/kmnist/kmnist-train-labels.npz"
 
         # Path to the test images and corresponding labels
-        kmnist_test_images_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-test-imgs.npz"
-        kmnist_test_labels_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-test-labels.npz"
+        kmnist_test_images_path = "/RL/kmnist/kmnist-test-imgs.npz"
+        kmnist_test_labels_path = "/RL/kmnist/kmnist-test-labels.npz"
 
         x_train = np.load(kmnist_train_images_path)['arr_0']
         y_train = np.load(kmnist_train_labels_path)['arr_0']
@@ -383,7 +383,7 @@ def accuracy_test(predictions, labels):
 
 def get_action_sequence(x):
     max_steps = 14 * N_layers
-    x_tensor = torch.tensor([x], dtype=torch.float32)
+    x_tensor = torch.tensor([x], dtype=torch.float32)  ##TODO 여기 잘못했었네. x도 NQE를 통과시켰어야 함
 
     env_rl = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
                     batch_size=1)
@@ -477,12 +477,12 @@ if __name__ == "__main__":
     plt.clf()
 
     torch.save(NQE_model.state_dict(),
-               "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model.pt")
+               "/RL/NQE_model.pt")
 
     # NQE model load
     NQE_model_transform = XTransform()
     NQE_model_transform.load_state_dict(torch.load(
-        "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_model.pt", weights_only=True))
+        "/RL/NQE_model.pt", weights_only=True))
 
     # RL part
     policy = PolicyNetwork(state_size=state_size, action_size=action_size)
@@ -575,10 +575,10 @@ if __name__ == "__main__":
 
     # RL load
     torch.save(policy.state_dict(),
-               '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/trained_policy.pth')
+               '/RL/trained_policy.pth')
     policy = PolicyNetwork(state_size=state_size, action_size=action_size)
     policy.load_state_dict(torch.load(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/trained_policy.pth', weights_only=True))
+        '/RL/trained_policy.pth', weights_only=True))
     policy.eval()
 
     # Y data change for QCNN
