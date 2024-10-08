@@ -315,12 +315,6 @@ class QASEnv(gym.Env):
         return measure_probs, reward, terminal
 
 
-def state_to_tensor(state):
-    pennylane_to_torch = [torch.tensor(i) for i in state]
-    stacked = torch.stack(pennylane_to_torch)
-    return stacked.float()
-
-
 def circuit_training(X_train, Y_train, scheme, action_sequence = None):
     weights = np.random.random(30, requires_grad=True)
     opt = qml.NesterovMomentumOptimizer(stepsize=QCNN_learning_rate)
@@ -460,22 +454,22 @@ def quantum_embedding_rl(x, action_sequence):
 if __name__ == "__main__":
     # Parameter for NQE & RL
     data_size = 4  # Data reduction size from 256->, determine # of qubit
-    batch_size = 25
+    batch_size = 7
 
     # Parameter for NQE
     N_layers = 3
-    NQE_iterations = 200
+    NQE_iterations = 2
 
     # Parameter for RL
     gamma = 0.98
-    RL_learning_rate = 0.01
+    RL_learning_rate = 0.02
     state_size = data_size ** 2
     action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 600
+    episodes = 3
     max_steps = 14 * N_layers
 
     # Parameters for QCNN
-    QCNN_steps = 200
+    QCNN_steps = 2
     QCNN_learning_rate = 0.01
     QCNN_batch_size = 25
 
