@@ -182,28 +182,27 @@ def transform_data(NQE_model, X_data):
 class PolicyNetwork(nn.Module):
     def __init__(self, state_size, action_size, num_of_qubit):
         super(PolicyNetwork, self).__init__()
-        self.state_linear_relu_stack = nn.Sequential(
-            nn.Linear(state_size * 4, state_size * 8),
-            nn.ReLU(),
-            nn.Linear(state_size * 8, state_size * 4),
-        )
         # qubit 별로 다른 model 적용하기
         self.action_select = nn.ModuleList(
             [nn.Sequential(
-                nn.Linear(state_size * 4, action_size * 2),
+                nn.Linear(state_size * 4, state_size * 8),
                 nn.ReLU(),
-                nn.Linear(action_size * 2, action_size),
+                nn.Linear(state_size * 8, state_size * 16),
+                nn.ReLU(),
+                nn.Linear(state_size * 16, action_size * 16),
+                nn.ReLU(),
+                nn.Linear(action_size * 16, action_size * 4),
+                nn.ReLU(),
+                nn.Linear(action_size * 4, action_size),
             ) for _ in range(num_of_qubit)]
         )
 
     def forward(self, state):
-        state_new = self.state_linear_relu_stack(state)
-
         action_probs = []
         epsilon = 0.03
 
         for qubit_action_select in self.action_select:
-            action_prob = torch.softmax(qubit_action_select(state_new), dim=-1)
+            action_prob = torch.softmax(qubit_action_select(state), dim=-1)
             adjust_action_probs = (action_prob + epsilon) / (
                     1 + epsilon * action_size)
             action_probs.append(adjust_action_probs)
@@ -521,7 +520,7 @@ def plot_nqe_loss(NQE_losses, iter):
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/NQE_{iter}th.png')
+    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/NQE_cmplx_{iter}th.png')
 
 def plot_policy_loss(policy_losses, iter):
     policy_losses_values = [loss.item() for loss in policy_losses]
@@ -534,7 +533,7 @@ def plot_policy_loss(policy_losses, iter):
     plt.xlabel('Episode')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/Policy_{iter}th.png')
+    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/Policy_cmplx_{iter}th.png')
 
 def draw_circuit(action_sequence, iter):
     @qml.qnode(dev)
@@ -552,7 +551,7 @@ def draw_circuit(action_sequence, iter):
         fig.text(0.1, -0.1, f'Action Sequence: {action_text}', fontsize=8,
                  wrap=True)
 
-        fig.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/RL_circuit_{iter}th.png', bbox_inches='tight')
+        fig.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/RL_circuit_cmplx_{iter}th.png', bbox_inches='tight')
 
 def plot_comparison(loss_none, loss_NQE, loss_NQE_RL,
                     accuracy_none, accuracy_NQE, accuracy_NQE_RL):
@@ -566,7 +565,7 @@ def plot_comparison(loss_none, loss_NQE, loss_NQE_RL,
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/QCNN.png')
+    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/QCNN_cmplx.png')
 
 # Main iterative process
 if __name__ == "__main__":
@@ -583,10 +582,10 @@ if __name__ == "__main__":
 
     # Parameter for RL
     gamma = 0.98
-    RL_learning_rate = 0.01
+    RL_learning_rate = 0.001
     state_size = data_size ** 2
     action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 400
+    episodes = 600
     max_steps = 8
 
     # Parameters for QCNN
