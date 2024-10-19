@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
 import pennylane as qml
 from pennylane import numpy as np
 
@@ -8,7 +7,7 @@ from embedding import quantum_embedding_rl
 dev = qml.device('default.qubit', wires=4)
 
 
-def plot_nqe_loss(NQE_losses, iter):
+def plot_nqe_loss(RL_model, NQE_losses, iter):
     plt.figure()
     plt.plot(NQE_losses, label='NQE Loss')
     step = max(1, len(NQE_losses) // 10)
@@ -18,25 +17,33 @@ def plot_nqe_loss(NQE_losses, iter):
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig(
-        f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/NQE_{iter}th.png')
+        f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/{RL_model}_NQE_{iter}th.png')
 
 
-def plot_policy_loss(policy_losses, iter):
-    policy_losses_values = [loss.item() for loss in policy_losses]
+def plot_policy_loss(RL_model, policy_losses, iter):
     plt.figure()
-    plt.plot(policy_losses_values, color='orange',
-             label='Policy Loss')
-    step = max(1, len(policy_losses_values) // 10)
-    plt.xticks(range(0, len(policy_losses_values), step))
-    plt.title(f'Policy Loop {iter}')
-    plt.xlabel('Episode')
-    plt.ylabel('Loss')
+    if RL_model == 'DQN':
+        plt.plot(policy_losses, color='orange',
+                 label='Total Reward')
+        step = max(1, len(policy_losses) // 10)
+        plt.xticks(range(0, len(policy_losses), step))
+        plt.title(f'Policy Loop {iter}')
+        plt.xlabel('Episode')
+        plt.ylabel('Total Reward')
+    else:
+        plt.plot(policy_losses, color='orange',
+                 label='Policy Loss')
+        step = max(1, len(policy_losses) // 10)
+        plt.xticks(range(0, len(policy_losses), step))
+        plt.title(f'Policy Loop {iter}')
+        plt.xlabel('Episode')
+        plt.ylabel('Loss')
     plt.legend()
     plt.savefig(
-        f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/Policy_{iter}th.png')
+        f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/{RL_model}_Policy_{iter}th.png')
 
 
-def draw_circuit(action_sequence, iter):
+def draw_circuit(RL_model, action_sequence, iter):
     @qml.qnode(dev)
     def fig_circ(action_sequence):
         quantum_embedding_rl(np.array([1, 1, 1, 1]), action_sequence)
@@ -53,11 +60,11 @@ def draw_circuit(action_sequence, iter):
                  wrap=True)
 
         fig.savefig(
-            f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/RL_circuit_{iter}th.png',
+            f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/{RL_model}_circuit_{iter}th.png',
             bbox_inches='tight')
 
 
-def plot_comparison(loss_none, loss_NQE, loss_NQE_RL,
+def plot_comparison(RL_model, loss_none, loss_NQE, loss_NQE_RL,
                     accuracy_none, accuracy_NQE, accuracy_NQE_RL):
     plt.figure()
     plt.plot(loss_none, label=f'None {accuracy_none:.3f}', color='blue')
@@ -71,4 +78,4 @@ def plot_comparison(loss_none, loss_NQE, loss_NQE_RL,
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig(
-        f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/QCNN.png')
+        f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/{RL_model}_QCNN.png')

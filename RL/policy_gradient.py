@@ -3,6 +3,7 @@ from torch import nn
 
 from agent import QASEnv
 from data import new_data
+from trace_distance import compute_trace_distance
 
 
 class PolicyNetwork(nn.Module):
@@ -38,9 +39,50 @@ class PolicyNetwork(nn.Module):
         return torch.stack(action_probs, dim=0)
 
 
+class PolicyNetworkComplex(nn.Module):
+    def __init__(self, state_size, action_size, num_of_qubit):
+        super(PolicyNetworkComplex, self).__init__()
+        self.action_size = action_size
+        self.action_select = nn.ModuleList(
+            [nn.Sequential(
+                nn.Linear(state_size * 4, state_size * 8),
+                nn.ReLU(),
+                nn.Linear(state_size * 8, state_size * 16),
+                nn.ReLU(),
+                nn.Linear(state_size * 16, action_size * 16),
+                nn.ReLU(),
+                nn.Linear(action_size * 16, action_size * 4),
+                nn.ReLU(),
+                nn.Linear(action_size * 4, action_size),
+            ) for _ in range(num_of_qubit)]
+        )
+
+    def forward(self, state):
+        action_probs = []
+        epsilon = 0.03
+
+        for qubit_action_select in self.action_select:
+            action_prob = torch.softmax(qubit_action_select(state), dim=-1)
+            adjust_action_probs = (action_prob + epsilon) / (
+                    1 + epsilon * self.action_size)
+            action_probs.append(adjust_action_probs)
+
+        return torch.stack(action_probs, dim=0)
+
+
 def train_policy(X_train_transformed, batch_size, data_size, Y_train, policy,
-                 optimizer, env, episodes, gamma):
+                 optimizer, env, episodes, gamma, trace_distance, max_steps,
+                 NQE_model):
     policy_losses = []
+    trace_distances = []
+
+    # Prepare samples from each class, 그런데 이거를 transformed로 하는게 맞나?
+    X_class0 = [x for x, y in zip(X_train_transformed, Y_train) if y == 0]
+    X_class1 = [x for x, y in zip(X_train_transformed, Y_train) if y == 1]
+    # Limit the number of samples to keep computation manageable
+    X_class0 = X_class0[:25]
+    X_class1 = X_class1[:25]
+
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train_transformed,
                                                Y_train)
@@ -86,12 +128,32 @@ def train_policy(X_train_transformed, batch_size, data_size, Y_train, policy,
         optimizer.step()
 
         print(f'Episode {episode + 1}/{episodes}, Loss: {policy_loss.item()}')
-    return policy, policy_losses
+
+        if trace_distance and episode % 10 == 0:
+            # Generate the current action_sequence
+            action_sequence = generate_policy_action_sequence(policy,
+                                                              batch_size,
+                                                              data_size,
+                                                              X_train_transformed,
+                                                              max_steps)
+            # Compute the trace distance
+            trace_distance = compute_trace_distance(data_size, NQE_model,
+                                                    action_sequence,
+                                                    X_class0, X_class1)
+            trace_distances.append(trace_distance)
+            print(f'Episode {episode + 1}, Trace Distance: {trace_distance}')
+
+    policy_losses = [loss.item() for loss in policy_losses]
+
+    if trace_distance:
+        return policy, policy_losses, trace_distances
+    else:
+        return policy, policy_losses
 
 
 # Function to generate action sequence
-def generate_action_sequence(policy_model, batch_size, data_size,
-                             X_train_transformed, max_steps):
+def generate_policy_action_sequence(policy_model, batch_size, data_size,
+                                    X_train_transformed, max_steps):
     env_eval = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
                       batch_size=batch_size)
     state, _ = env_eval.reset()

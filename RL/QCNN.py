@@ -1,5 +1,4 @@
 import pennylane as qml
-import pennylane as qml
 import torch
 from pennylane import numpy as np
 

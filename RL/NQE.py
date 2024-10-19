@@ -3,8 +3,7 @@ import torch
 from torch import nn
 
 from data import new_data
-from embedding import quantum_embedding_rl
-from embedding import quantum_embedding_zz
+from embedding import quantum_embedding_rl, quantum_embedding_zz
 
 dev = qml.device('default.qubit', wires=4)
 

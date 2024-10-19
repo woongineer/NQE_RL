@@ -1,15 +1,9 @@
-import torch
-
-from NQE import train_NQE, transform_data
+from NQE_RL_iterator import NQE_RL_iterator
 from QCNN import circuit_training, QCNN_classifier, accuracy_test
-from RL import train_policy, PolicyNetwork, generate_action_sequence
-from agent import QASEnv
 from data import data_load_and_process
-from figures import plot_policy_loss, plot_nqe_loss, plot_comparison, \
-    draw_circuit
+from figures import plot_comparison
 
-
-def main():
+if __name__ == "__main__":
     # Number of total iterations
     total_iterations = 2
 
@@ -25,7 +19,7 @@ def main():
     RL_learning_rate = 0.01
     state_size = data_size ** 2
     action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 2
+    episodes = 22
     max_steps = 8
 
     # Parameters for QCNN
@@ -33,48 +27,30 @@ def main():
     QCNN_learning_rate = 0.01
     QCNN_batch_size = 25
 
+    # RL model to use
+    RL_model = 'DQN'  # policy_gradient, policy_gradient_complex, DQN
+
+    # Compute trace_distance
+    trace_distance = True
+
     # Load data
     X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='kmnist',
                                                              reduction_size=data_size)
 
-    NQE_models = []
-    Policy_models = []
-    action_sequences = []
-
-    for iter in range(total_iterations):
-        print(f"Starting iteration {iter + 1}/{total_iterations}")
-        # Step 1: Train NQE
-        if iter == 0:
-            action_sequence = None
-        NQE_model, NQE_losses = train_NQE(X_train, Y_train, NQE_iterations,
-                                          batch_size, action_sequence)
-        NQE_models.append(NQE_model)
-
-        # Step 2: Transform X_train using NQE_model
-        X_train_transformed = transform_data(NQE_model, X_train)
-
-        # Step 3: Train RL_legacy policy
-        policy = PolicyNetwork(state_size=state_size, action_size=action_size,
-                               num_of_qubit=data_size)
-        optimizer = torch.optim.Adam(policy.parameters(), lr=RL_learning_rate)
-        env = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
-                     batch_size=batch_size)
-        policy, policy_losses = train_policy(X_train_transformed, batch_size,
-                                             data_size, Y_train, policy,
-                                             optimizer, env, episodes, gamma)
-        Policy_models.append(policy)
-
-        # Step 4: Generate action_sequence
-        action_sequence = generate_action_sequence(policy, batch_size,
-                                                   data_size,
-                                                   X_train_transformed,
-                                                   max_steps)
-        action_sequences.append(action_sequence)
-
-        # save loss history fig
-        plot_nqe_loss(NQE_losses, iter)
-        plot_policy_loss(policy_losses, iter)
-        draw_circuit(action_sequence, iter)
+    NQE_models, action_sequences = NQE_RL_iterator(RL_model=RL_model,
+                                                   total_iterations=total_iterations,
+                                                   NQE_iterations=NQE_iterations,
+                                                   episodes=episodes,
+                                                   batch_size=batch_size,
+                                                   state_size=state_size,
+                                                   action_size=action_size,
+                                                   data_size=data_size,
+                                                   RL_learning_rate=RL_learning_rate,
+                                                   max_steps=max_steps,
+                                                   gamma=gamma,
+                                                   X_train=X_train,
+                                                   Y_train=Y_train,
+                                                   trace_distance=trace_distance)
 
     # After iterations, use the final NQE model and action_sequence for QCNN
     first_NQE_model = NQE_models[0]
@@ -126,14 +102,10 @@ def main():
     accuracy_with_NQE_RL = accuracy_test(prediction_with_NQE_RL,
                                          Y_test_QCNN) * 100
 
-    plot_comparison(loss_history_with_none, loss_history_with_NQE,
+    plot_comparison(RL_model, loss_history_with_none, loss_history_with_NQE,
                     loss_history_with_NQE_RL,
                     accuracy_with_none, accuracy_with_NQE, accuracy_with_NQE_RL)
 
     print(f"Accuracy without NQE: {accuracy_with_none:.3f}")
     print(f"Accuracy with NQE: {accuracy_with_NQE:.3f}")
     print(f"Accuracy with NQE & RL_legacy: {accuracy_with_NQE_RL:.3f}")
-
-
-if __name__ == "__main__":
-    main()
