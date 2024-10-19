@@ -19,12 +19,12 @@ def data_load_and_process(dataset='mnist', reduction_size: int = 4):
             x_test, y_test) = tf.keras.datasets.mnist.load_data()
     elif dataset == 'kmnist':
         # Path to training images and corresponding labels provided as numpy arrays
-        kmnist_train_images_path = "/RL/kmnist/kmnist-train-imgs.npz"
-        kmnist_train_labels_path = "/RL/kmnist/kmnist-train-labels.npz"
+        kmnist_train_images_path = "/RL_legacy/kmnist/kmnist-train-imgs.npz"
+        kmnist_train_labels_path = "/RL_legacy/kmnist/kmnist-train-labels.npz"
 
         # Path to the test images and corresponding labels
-        kmnist_test_images_path = "/RL/kmnist/kmnist-test-imgs.npz"
-        kmnist_test_labels_path = "/RL/kmnist/kmnist-test-labels.npz"
+        kmnist_test_images_path = "/RL_legacy/kmnist/kmnist-test-imgs.npz"
+        kmnist_test_labels_path = "/RL_legacy/kmnist/kmnist-test-labels.npz"
 
         x_train = np.load(kmnist_train_images_path)['arr_0']
         y_train = np.load(kmnist_train_labels_path)['arr_0']
@@ -150,28 +150,35 @@ class XTransform(torch.nn.Module):
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, num_of_qubit):
         super(PolicyNetwork, self).__init__()
         self.state_linear_relu_stack = nn.Sequential(
-            nn.Linear(state_size, state_size * 2),
+            nn.Linear(state_size * 4, state_size * 8),
             nn.ReLU(),
-            nn.Linear(state_size * 2, state_size * 4),
-            nn.ReLU(),
-            nn.Linear(state_size * 4, state_size * 2),
-            nn.ReLU(),
-            nn.Linear(state_size * 2, state_size)
+            nn.Linear(state_size * 8, state_size * 4),
         )
-        self.action_select = nn.Linear(state_size, action_size)
+        # qubit 별로 다른 model 적용하기
+        self.action_select = nn.ModuleList(
+            [nn.Sequential(
+                nn.Linear(state_size * 4, action_size * 2),
+                nn.ReLU(),
+                nn.Linear(action_size * 2, action_size),
+            ) for _ in range(num_of_qubit)]
+        )
 
     def forward(self, state):
         state_new = self.state_linear_relu_stack(state)
-        action_probs = torch.softmax(self.action_select(state_new), dim=-1)
 
+        action_probs = []
         epsilon = 0.03
-        adjust_action_probs = (action_probs + epsilon) / (
-                1 + epsilon * action_size)
 
-        return adjust_action_probs
+        for qubit_action_select in self.action_select:
+            action_prob = torch.softmax(qubit_action_select(state_new), dim=-1)
+            adjust_action_probs = (action_prob + epsilon) / (
+                    1 + epsilon * action_size)
+            action_probs.append(adjust_action_probs)
+
+        return torch.stack(action_probs, dim=0)
 
 
 class QASEnv(gym.Env):
@@ -188,36 +195,52 @@ class QASEnv(gym.Env):
         self.batch_size = batch_size
 
     def reset(self):
-        self.circuit_gates_x1 = [
-            self.select_action([None for _ in range(self.batch_size)], None)]
-        self.circuit_gates_x2 = [
-            self.select_action([None for _ in range(self.batch_size)], None)]
+        dummy_action = [None for _ in range(len(self.qubits))]
+        dummy_input = [[0 for _ in self.qubits] for _ in range(batch_size)]
+
+        self.circuit_gates_x1 = [self.select_action(dummy_action, dummy_input)]
+        self.circuit_gates_x2 = [self.select_action(dummy_action, dummy_input)]
         self.circuit_gates_x = []
         return self.get_obs()
 
     def select_action(self, action, input):
-        action_set = []
-        for i in range(self.batch_size):
-            action_per_batch = []
-            for idx, qubit in enumerate(self.qubits):
-                next_qubit = self.qubits[(idx + 1) % len(self.qubits)]
-                if action[i] == None:
-                    action_per_batch += [qml.Identity(wires=idx)]
-                elif action[i] == 0:
-                    action_per_batch += [qml.Hadamard(wires=idx)]
-                elif action[i] == 1:
-                    action_per_batch += [
-                        qml.RX(input[i][idx], wires=idx)]
-                elif action[i] == 2:
-                    action_per_batch += [
-                        qml.RY(input[i][idx], wires=idx)]
-                elif action[i] == 3:
-                    action_per_batch += [
-                        qml.RZ(input[i][idx], wires=idx)]
-                elif action[i] == 4:
-                    action_per_batch += [qml.CNOT(wires=[qubit, next_qubit])]
-            action_set += [action_per_batch]
-        return action_set
+        action_sets = []
+
+        for input_batch in input:
+            action_set = []
+            for qubit in self.qubits:
+                next_qubit = (qubit + 1) % len(self.qubits)
+                if action[qubit] is None:
+                    action_set += [qml.Identity(wires=qubit)]
+                elif action[qubit] == 0:
+                    action_set += [qml.Hadamard(wires=qubit)]
+                elif action[qubit] == 1:
+                    action_set += [qml.RX(input_batch[qubit], wires=qubit)]
+                elif action[qubit] == 2:
+                    action_set += [qml.RY(input_batch[qubit], wires=qubit)]
+                elif action[qubit] == 3:
+                    action_set += [qml.RZ(input_batch[qubit], wires=qubit)]
+                elif action[qubit] == 4:
+                    action_set += [qml.CNOT(wires=[qubit, next_qubit])]
+            action_sets.append(action_set)
+        return action_sets
+
+    def compute_state_stats(self, measure_probs):
+        measure_probs_tensor = torch.stack(
+            [torch.tensor(mp) for mp in measure_probs])
+
+        mean_measure_probs = torch.mean(measure_probs_tensor, dim=0)
+        var_measure_probs = torch.var(measure_probs_tensor, dim=0)
+        skew_measure_probs = torch.mean(
+            ((measure_probs_tensor - mean_measure_probs) ** 3), dim=0) / (
+                                     var_measure_probs ** 1.5 + 1e-8)
+        kurt_measure_probs = torch.mean(
+            ((measure_probs_tensor - mean_measure_probs) ** 4), dim=0) / (
+                                     var_measure_probs ** 2 + 1e-8) - 3
+        state_stats = torch.cat((mean_measure_probs, var_measure_probs,
+                                 skew_measure_probs, kurt_measure_probs), dim=0)
+
+        return state_stats.float()
 
     def get_obs(self):
 
@@ -227,13 +250,13 @@ class QASEnv(gym.Env):
         gates_x2 = [list(row) for row in zip(*self.circuit_gates_x2)]
 
         @qml.qnode(dev)
-        def circuit(batch_x1, batch_x2):
-            for seq in batch_x1:
+        def circuit(x1, x2):
+            for seq in x1:
                 for gate in seq:
                     qml.apply(gate)
-            for seq in batch_x2[::-1]:
-                for gate in seq:
-                    qml.apply(qml.adjoint(gate))
+            for seq in x2[::-1]:
+                for gate in seq[::-1]:
+                    qml.adjoint(gate)
 
             return qml.probs(wires=range(len(self.qubits)))
 
@@ -245,16 +268,12 @@ class QASEnv(gym.Env):
             measure_probs.append(measure_prob)
             measure_0s.append(measure_prob[0])
 
-        return measure_probs, measure_0s
-
-    def step_eval(self, action, x):
-        action_gate_x = self.select_action([action], x)[0]
-        self.circuit_gates_x.append(action_gate_x)
-
-        return self.get_obs_eval()
+        return self.compute_state_stats(measure_probs), measure_0s
 
     def get_obs_eval(self):
         dev = qml.device("default.qubit", wires=self.qubits)
+
+        gates_x = [list(row) for row in zip(*self.circuit_gates_x)]
 
         @qml.qnode(dev)
         def circuit(x):
@@ -264,9 +283,18 @@ class QASEnv(gym.Env):
 
             return qml.probs(wires=range(len(self.qubits)))
 
-        return circuit(self.circuit_gates_x)
+        measure_probs = []
+        for batch_x1 in gates_x:
+            measure_prob = circuit(batch_x1)
+            measure_probs.append(measure_prob)
 
+        return self.compute_state_stats(measure_probs)
 
+    def step_eval(self, action, x):
+        action_gate_x = self.select_action(action, x)
+        self.circuit_gates_x.append(action_gate_x)
+
+        return self.get_obs_eval()
 
     def step(self, action, X1, X2, Y_batch):
         action_gate_x1 = self.select_action(action, X1)
@@ -281,19 +309,13 @@ class QASEnv(gym.Env):
         measure_0s = torch.stack([torch.tensor(i) for i in measure_0s])
         measure_loss = loss_fn(measure_0s, Y_batch)
 
-        reward = 1-measure_loss
+        reward = 1 - measure_loss.mean()  # TODO 개별 배치마다 따로 prob을 뽑은게 아니니까 reward도 통합해야 할 듯, measure_loss를 minimize하는게 목적이니 작을수록 큰 reward
         terminal = len(self.circuit_gates_x1) >= self.max_timesteps
 
         return measure_probs, reward, terminal
 
 
-def state_to_tensor(state):
-    pennylane_to_torch = [torch.tensor(i) for i in state]
-    stacked = torch.stack(pennylane_to_torch)
-    return stacked.float()
-
-
-def circuit_training(X_train, Y_train, scheme):
+def circuit_training(X_train, Y_train, scheme, action_sequence = None):
     weights = np.random.random(30, requires_grad=True)
     opt = qml.NesterovMomentumOptimizer(stepsize=QCNN_learning_rate)
     loss_history = []
@@ -302,7 +324,7 @@ def circuit_training(X_train, Y_train, scheme):
         X_batch = [X_train[i] for i in batch_index]
         Y_batch = [Y_train[i] for i in batch_index]
         weights, cost_new = opt.step_and_cost(
-            lambda v: cost(v, X_batch, Y_batch, scheme),
+            lambda v: cost(v, X_batch, Y_batch, scheme, action_sequence),
             weights)
         loss_history.append(cost_new)
         if it % 3 == 0:
@@ -316,12 +338,11 @@ def Linear_Loss(labels, predictions):
         loss += 0.5 * (1 - l * p)
     return loss / len(labels)
 
-def cost(weights, X_batch, Y_batch, scheme):
+def cost(weights, X_batch, Y_batch, scheme, action_sequence = None):
     preds = []
     for x in X_batch:
         if scheme == 'NQE_RL':
-            action_list = get_action_sequence(x)
-            pred = QCNN_classifier(weights, x, scheme, action_list)
+            pred = QCNN_classifier(weights, x, scheme, action_sequence)
         else:
             pred = QCNN_classifier(weights, x, scheme)
         preds.append(pred)
@@ -329,16 +350,16 @@ def cost(weights, X_batch, Y_batch, scheme):
 
 
 @qml.qnode(dev)
-def QCNN_classifier(params, x, scheme, action_list=None):
+def QCNN_classifier(params, x, scheme, action_sequence=None):
     if scheme == 'NQE_RL':
-        statepreparation(x, scheme, action_list)
+        statepreparation(x, scheme, action_sequence)
     else:
         statepreparation(x, scheme)
     QCNN(params)
     return qml.expval(qml.PauliZ(2))
 
 
-def statepreparation(x, scheme, action_list=None):
+def statepreparation(x, scheme, action_sequence=None):
     if scheme is None:
         quantum_embedding_zz(x)
     elif scheme == 'NQE':
@@ -346,7 +367,7 @@ def statepreparation(x, scheme, action_list=None):
         quantum_embedding_zz(x)
     elif scheme == 'NQE_RL':
         x = NQE_model_transform(torch.tensor(x))
-        quantum_embedding_rl(x, action_list)
+        quantum_embedding_rl(x, action_sequence)
 
 
 def QCNN(params):
@@ -381,65 +402,71 @@ def accuracy_test(predictions, labels):
     return acc / len(labels)
 
 
-def get_action_sequence(x):
-    max_steps = 14 * N_layers
-    x_tensor = torch.tensor([x], dtype=torch.float32)  ##TODO 여기 잘못했었네. x도 NQE를 통과시켰어야 함
+def get_action_sequence(policy_model, X_batch, max_steps):
+    env_eval = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps, #TODO -1
+                      batch_size=batch_size)
+    state, _ = env_eval.reset()
 
-    env_rl = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
-                    batch_size=1)
-    current_state, _ = env_rl.reset()
+    action_sequence = []
+    prev_action = torch.tensor(
+        [999 for _ in range(env.simulator.num_wires)])
 
-    # Since we can't have loops inside a QNode, we'll precompute the actions
-    action_list = []
-    for _ in range(max_steps):
-        current_state = state_to_tensor(current_state).squeeze(0)
+    for i in range(max_steps):
         with torch.no_grad():
-            # The policy model expects a state tensor
-            action_probs = policy(current_state)
+            prob = policy_model(state)
+            dist = torch.distributions.Categorical(prob)
+            action = dist.sample()
 
-        # Sample an action for each qubit
-        dist = torch.distributions.Categorical(action_probs)
-        action = dist.sample()
-        action_list.append(action)
+            # Ensure the action is not the same as the previous action
+            mask = (action == prev_action)
+            while mask.any():
+                new_samples = dist.sample()
+                action[mask] = new_samples[mask]
+                mask = (action == prev_action)
+            prev_action = action
 
-        # update the state
-        current_state = env_rl.step_eval(action.numpy(), x_tensor)
+        # Append the actions to the action sequence
+        action_sequence.append(action.numpy())
 
-    return action_list
+        # Apply the actions to the environment
+        state = env.step_eval(action, X_batch)
+        if i % 3 == 0:
+            print(f'{i}/{max_steps} actions generated')
 
-
-def quantum_embedding_rl(x, action_list):
-    for action in action_list:
-        for j in range(data_size):
-            if action == 0:
-                qml.Hadamard(wires=j)
-            elif action == 1:
-                qml.RX(x[j], wires=j)
-            elif action == 2:
-                qml.RY(x[j], wires=j)
-            elif action == 3:
-                qml.RZ(x[j], wires=j)
-            elif action == 4:
-                qml.CNOT(wires=[j, (j + 1) % data_size])
+    return action_sequence
 
 
+def quantum_embedding_rl(x, action_sequence):
+    for action in action_sequence:
+        for qubit_idx in range(data_size):
+            if action[qubit_idx] == 0:
+                qml.Hadamard(wires=qubit_idx)
+            elif action[qubit_idx] == 1:
+                qml.RX(x[qubit_idx], wires=qubit_idx)
+            elif action[qubit_idx] == 2:
+                qml.RY(x[qubit_idx], wires=qubit_idx)
+            elif action[qubit_idx] == 3:
+                qml.RZ(x[qubit_idx], wires=qubit_idx)
+            elif action[qubit_idx] == 4:
+                qml.CNOT(wires=[qubit_idx, (qubit_idx + 1) % data_size])
 
 
 if __name__ == "__main__":
-    # Parameter for NQE & RL
+    # Parameter for NQE & RL_legacy
     data_size = 4  # Data reduction size from 256->, determine # of qubit
-    batch_size = 3
+    batch_size = 7
 
     # Parameter for NQE
     N_layers = 3
-    NQE_iterations = 3
+    NQE_iterations = 2
 
-    # Parameter for RL
+    # Parameter for RL_legacy
     gamma = 0.98
-    RL_learning_rate = 0.01
+    RL_learning_rate = 0.02
     state_size = data_size ** 2
     action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 2
+    episodes = 3
+    max_steps = 14 * N_layers
 
     # Parameters for QCNN
     QCNN_steps = 2
@@ -473,25 +500,28 @@ if __name__ == "__main__":
 
     plt.plot(NQE_losses)
     plt.savefig(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/NQE_loss.png')
+        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL_legacy/NQE_loss.png')
     plt.clf()
 
     torch.save(NQE_model.state_dict(),
-               "/RL/NQE_model.pt")
+               "/RL_legacy/NQE_model.pt")
 
     # NQE model load
     NQE_model_transform = XTransform()
     NQE_model_transform.load_state_dict(torch.load(
-        "/RL/NQE_model.pt", weights_only=True))
+        "/RL_legacy/NQE_model.pt",
+        weights_only=True))
+    NQE_model_transform.eval()
 
-    # RL part
-    policy = PolicyNetwork(state_size=state_size, action_size=action_size)
+    # RL_legacy part
+    policy = PolicyNetwork(state_size=state_size, action_size=action_size,
+                           num_of_qubit=data_size)
     optimizer = torch.optim.Adam(policy.parameters(), lr=RL_learning_rate)
     scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
-    env = QASEnv(num_of_qubit=data_size, max_timesteps=14 * N_layers,
+    env = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
                  batch_size=batch_size)
 
-    # RL Loop
+    # RL_legacy Loop
     policy_losses = []
     for episode in range(episodes):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
@@ -504,12 +534,10 @@ if __name__ == "__main__":
         done = False
         log_probs = []
         rewards = []
-        action_list = []
-        prev_action = torch.tensor([999 for _ in range(batch_size)])
+        prev_action = torch.tensor([999 for _ in range(data_size)])
 
         while not done:
-            state_tensor = state_to_tensor(state)
-            prob = policy.forward(state_tensor)
+            prob = policy.forward(state)
             dist = torch.distributions.Categorical(prob)
 
             action = dist.sample()
@@ -518,7 +546,7 @@ if __name__ == "__main__":
             while mask.any():
                 # trial += 1
                 # if trial > 0:
-                    # print(f"trial{trial}, {action}")
+                # print(f"trial{trial}, {action}")
                 new_samples = dist.sample()
                 action[mask] = new_samples[mask]
                 mask = (action == prev_action)
@@ -528,22 +556,25 @@ if __name__ == "__main__":
                                                 X2_batch_transformed, Y_batch)
 
             log_prob = dist.log_prob(action.clone().detach())
-            log_probs.append(log_prob)
+            log_probs.append(
+                log_prob.sum())  # TODO 하나의 reward를 만들기 위한 4개의 probs였으니 joint probability이고, 그거에 log를 취했으니 * -> + 로
             rewards.append(reward)
-            action_list.append(action)
 
             state = next_state
 
-        rewards = torch.stack(rewards)
-        returns = torch.zeros_like(rewards)
-        G = torch.zeros(rewards.size(1))
-        for t in reversed(range(len(rewards))):
-            G = rewards[t] + gamma * G
-            returns[t] = G
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)  #TODO norm or not?
+        returns = []
+        G = 0
+        for r in reversed(rewards):
+            G = r + gamma * G
+            returns.insert(0, G)
+
+        # Convert returns to tensor
+        returns = torch.tensor(returns, dtype=torch.float32)
+        returns = (returns - returns.mean()) / (
+                    returns.std() + 1e-8)  # TODO to norm or not? scale이 너무 크긴 한데...
 
         # Compute policy loss
-        log_probs = torch.stack(log_probs)  # Shape: [num_steps, batch_size]
+        log_probs = torch.stack(log_probs)
         policy_loss = -log_probs * returns
         policy_loss = policy_loss.mean()
         policy_losses.append(policy_loss)
@@ -555,7 +586,6 @@ if __name__ == "__main__":
 
         print(
             f'E{episode + 1}/{episodes}, loss:{policy_loss}')
-            # f'E{episode + 1}/{episodes}, loss:{policy_loss}, actions:{action_list}')
 
         early_stop = 7
         if len(policy_losses) >= early_stop:
@@ -570,20 +600,33 @@ if __name__ == "__main__":
     policy_losses = [loss.detach().numpy() for loss in policy_losses]
     plt.plot(policy_losses)
     plt.savefig(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/policy_loss.png')
+        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL_legacy/policy_loss.png')
     plt.clf()
 
-    # RL load
+    # RL_legacy load
     torch.save(policy.state_dict(),
-               '/RL/trained_policy.pth')
-    policy = PolicyNetwork(state_size=state_size, action_size=action_size)
+               '/RL_legacy/trained_policy.pth')
+    policy = PolicyNetwork(state_size=state_size, action_size=action_size,
+                           num_of_qubit=data_size)
     policy.load_state_dict(torch.load(
-        '/RL/trained_policy.pth', weights_only=True))
+        '/RL_legacy/trained_policy.pth',
+        weights_only=True))
     policy.eval()
 
     # Y data change for QCNN
     Y_train = [-1 if y == 0 else 1 for y in Y_train]
     Y_test = [-1 if y == 0 else 1 for y in Y_test]
+
+    # NQE all data
+    transformed_X_train = [NQE_model_transform(torch.tensor(x)) for x in
+                           X_train]
+    transformed_X_batch = torch.stack(
+        [torch.tensor(x) for x in transformed_X_train])
+
+    # Generate the action sequence
+    action_sequence = get_action_sequence(policy, transformed_X_batch, max_steps)
+    # action_sequence = [np.random.randint(0,5, size=4).numpy() for _ in range(max_steps)]
+
 
     # QCNN Training
     loss_history_with_none, weight_with_none = circuit_training(
@@ -597,7 +640,8 @@ if __name__ == "__main__":
     loss_history_with_NQE_RL, weight_with_NQE_RL = circuit_training(
         X_train=X_train,
         Y_train=Y_train,
-        scheme="NQE_RL")
+        scheme="NQE_RL",
+        action_sequence=action_sequence)
 
     plt.rcParams['figure.figsize'] = [10, 5]
     fig, ax = plt.subplots()
@@ -608,7 +652,7 @@ if __name__ == "__main__":
         ax.plot(range(len(loss_history_with_NQE)), loss_history_with_NQE,
                 label="With NQE", c=clrs[1])
         ax.plot(range(len(loss_history_with_NQE_RL)), loss_history_with_NQE_RL,
-                label="With NQE & RL", c=clrs[2])
+                label="With NQE & RL_legacy", c=clrs[2])
 
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Loss")
@@ -616,17 +660,14 @@ if __name__ == "__main__":
     ax.legend()
 
     fig.savefig(
-        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/fig.png')
+        '/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL_legacy/fig.png')
 
     prediction_with_none = [QCNN_classifier(weight_with_none, x, scheme=None)
                             for x in X_test]
     prediction_with_NQE = [QCNN_classifier(weight_with_NQE, x, scheme="NQE") for
                            x in X_test]
-    prediction_with_NQE_RL = []
-    for x in X_test:
-        action_list = get_action_sequence(x)
-        pred = QCNN_classifier(weight_with_NQE_RL, x, "NQE_RL", action_list)
-        prediction_with_NQE_RL.append(pred)
+    prediction_with_NQE_RL = [QCNN_classifier(weight_with_NQE_RL, x, "NQE_RL", action_sequence) for
+                           x in X_test]
 
     accuracy_with_none = accuracy_test(prediction_with_none, Y_test) * 100
     accuracy_with_NQE = accuracy_test(prediction_with_NQE, Y_test) * 100
@@ -634,4 +675,4 @@ if __name__ == "__main__":
 
     print(f"Accuracy without NQE: {accuracy_with_none:.3f}")
     print(f"Accuracy with NQE: {accuracy_with_NQE:.3f}")
-    print(f"Accuracy with NQE & RL: {accuracy_with_NQE_RL:.3f}")
+    print(f"Accuracy with NQE & RL_legacy: {accuracy_with_NQE_RL:.3f}")

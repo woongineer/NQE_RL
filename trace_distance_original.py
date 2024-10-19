@@ -16,12 +16,12 @@ def data_load_and_process(dataset='mnist', reduction_size: int = 4):
             x_test, y_test) = tf.keras.datasets.mnist.load_data()
     elif dataset == 'kmnist':
         # Path to training images and corresponding labels provided as numpy arrays
-        kmnist_train_images_path = "/RL/kmnist/kmnist-train-imgs.npz"
-        kmnist_train_labels_path = "/RL/kmnist/kmnist-train-labels.npz"
+        kmnist_train_images_path = "/RL_legacy/kmnist/kmnist-train-imgs.npz"
+        kmnist_train_labels_path = "/RL_legacy/kmnist/kmnist-train-labels.npz"
 
         # Path to the test images and corresponding labels
-        kmnist_test_images_path = "/RL/kmnist/kmnist-test-imgs.npz"
-        kmnist_test_labels_path = "/RL/kmnist/kmnist-test-labels.npz"
+        kmnist_test_images_path = "/RL_legacy/kmnist/kmnist-test-imgs.npz"
+        kmnist_test_labels_path = "/RL_legacy/kmnist/kmnist-test-labels.npz"
 
         x_train = np.load(kmnist_train_images_path)['arr_0']
         y_train = np.load(kmnist_train_labels_path)['arr_0']

@@ -18,12 +18,12 @@ def data_load_and_process(dataset='mnist', reduction_size: int = 4):
             x_test, y_test) = tf.keras.datasets.mnist.load_data()
     elif dataset == 'kmnist':
         # Path to training images and corresponding labels provided as numpy arrays
-        kmnist_train_images_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-train-imgs.npz"
-        kmnist_train_labels_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-train-labels.npz"
+        kmnist_train_images_path = "/RL_legacy/kmnist/kmnist-train-imgs.npz"
+        kmnist_train_labels_path = "/RL_legacy/kmnist/kmnist-train-labels.npz"
 
         # Path to the test images and corresponding labels
-        kmnist_test_images_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-test-imgs.npz"
-        kmnist_test_labels_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/kmnist/kmnist-test-labels.npz"
+        kmnist_test_images_path = "/RL_legacy/kmnist/kmnist-test-imgs.npz"
+        kmnist_test_labels_path = "/RL_legacy/kmnist/kmnist-test-labels.npz"
 
         x_train = np.load(kmnist_train_images_path)['arr_0']
         y_train = np.load(kmnist_train_labels_path)['arr_0']
@@ -343,7 +343,7 @@ class QASEnv(gym.Env):
 
         return state_stats, reward, terminal
 
-# Function to train RL policy
+# Function to train RL_legacy policy
 def train_policy(X_train_transformed, Y_train, policy, optimizer, env, episodes, gamma):
     policy_losses = []
     for episode in range(episodes):
@@ -520,7 +520,7 @@ def plot_nqe_loss(NQE_losses, iter):
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/NQE_cmplx_{iter}th.png')
+    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL_legacy/result_plot/NQE_cmplx_{iter}th.png')
 
 def plot_policy_loss(policy_losses, iter):
     policy_losses_values = [loss.item() for loss in policy_losses]
@@ -533,7 +533,7 @@ def plot_policy_loss(policy_losses, iter):
     plt.xlabel('Episode')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/Policy_cmplx_{iter}th.png')
+    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL_legacy/result_plot/Policy_cmplx_{iter}th.png')
 
 def draw_circuit(action_sequence, iter):
     @qml.qnode(dev)
@@ -551,21 +551,21 @@ def draw_circuit(action_sequence, iter):
         fig.text(0.1, -0.1, f'Action Sequence: {action_text}', fontsize=8,
                  wrap=True)
 
-        fig.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/RL_circuit_cmplx_{iter}th.png', bbox_inches='tight')
+        fig.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL_legacy/result_plot/RL_circuit_cmplx_{iter}th.png', bbox_inches='tight')
 
 def plot_comparison(loss_none, loss_NQE, loss_NQE_RL,
                     accuracy_none, accuracy_NQE, accuracy_NQE_RL):
     plt.figure()
     plt.plot(loss_none, label=f'None {accuracy_none:.3f}', color='blue')
     plt.plot(loss_NQE, label=f'NQE {accuracy_NQE:.3f}', color='green')
-    plt.plot(loss_NQE_RL, label=f'NQE & RL {accuracy_NQE_RL:.3f}', color='red')
+    plt.plot(loss_NQE_RL, label=f'NQE & RL_legacy {accuracy_NQE_RL:.3f}', color='red')
     step = max(1, len(loss_none) // 10)
     plt.xticks(range(0, len(loss_none), step))
     plt.title('QCNN')
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL/result_plot/QCNN_cmplx.png')
+    plt.savefig(f'/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/RL_legacy/result_plot/QCNN_cmplx.png')
 
 # Main iterative process
 if __name__ == "__main__":
@@ -580,7 +580,7 @@ if __name__ == "__main__":
     N_layers = 1
     NQE_iterations = 200
 
-    # Parameter for RL
+    # Parameter for RL_legacy
     gamma = 0.98
     RL_learning_rate = 0.001
     state_size = data_size ** 2
@@ -611,7 +611,7 @@ if __name__ == "__main__":
         # Step 2: Transform X_train using NQE_model
         X_train_transformed = transform_data(NQE_model, X_train)
 
-        # Step 3: Train RL policy
+        # Step 3: Train RL_legacy policy
         policy = PolicyNetwork(state_size=state_size, action_size=action_size, num_of_qubit=data_size)
         optimizer = torch.optim.Adam(policy.parameters(), lr=RL_learning_rate)
         env = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps, batch_size=batch_size)
@@ -668,4 +668,4 @@ if __name__ == "__main__":
 
     print(f"Accuracy without NQE: {accuracy_with_none:.3f}")
     print(f"Accuracy with NQE: {accuracy_with_NQE:.3f}")
-    print(f"Accuracy with NQE & RL: {accuracy_with_NQE_RL:.3f}")
+    print(f"Accuracy with NQE & RL_legacy: {accuracy_with_NQE_RL:.3f}")
