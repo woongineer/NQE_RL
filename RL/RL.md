@@ -49,4 +49,26 @@ RL에다가 NQE를 돌리면 개별 architecture마다 x->x'를 학습할텐데,
 하튼 iterative + per qubit 구조로 1개의 구조를 만들어내는게 목표다\
 per qubit 으로 하기 위해서는 CNOT을 어떻게 할 지 생각해야하는데, QAS 논문에서는 바로 다음 qubit하고 하는거로 했네?\
 https://github.com/qdevpsi3/quantum-arch-search/blob/main/src/qas_gym/utils.py#L7 \
-ㅇ
+
+
+[11] NQE_RL_single: 위 시나리오대로 NQE 후 RL
+[12] 중요 NQE_RL_iter: NQE-RL-NQE-RL... iterative하게 한거. 20241011까지 기준 코드
+[13] NQE_RL_iter_complex: 12번 코드의 NN 부분 더 복잡하게 한거
+[14] NQE_RL_iter_policyfix: 12번 코드에서는 X_test할때 다시 action sequence를 안뽑음. 이거는 X_test에 대해 새로 뽑음
+[15] NQE_A2C: Policy Gradient 대신 A2C 써봄, gpt
+
+### 2024.10.11 발표 피드백
+이전까지의 내용 및 결과는 overleaf로 정리해서 발표함.\
+[석훈] Policy based는 continuous일 때 하는 것 같다. Action space가 discrete하고 적으니 Value based RL을 써야 할 것 같다 \
+G는 scaler인데 gradient가 의미가 있나? G랑 곱하는게 무슨 의미인가?\
+state와 trace distance 사이의 연관성이 있나? \
+Episodes가 지날수록 trace distance가 증가하는지를 확인해야함(class distance 함수) \
+Gate의 Parameter까지 가능...? \
+Identity도 옵션으로\
+ZZ feature embedding에서 하나씩 바꿔보는 식으로 학습하는건 어떤가? ZZ->XX 이렇게 2qubit은 2qubit으로\
+처음에 ZZ 안쓰고 하기?\
+NQE랑 Policy를 loop 돌릴때 fine tuning 방식으로 하기\
+Test에서도 action sequence를 새로 뽑는거는 아닌 것 같다.\
+
+[16] trace_distance_original: 탁님 코드에서 trace distance부분만 뽑아온 것. 공부용
+[17] NQE_RL_iter_trace: NQE_RL_iter에서 RL의 trace distance 계산 부분 추가
