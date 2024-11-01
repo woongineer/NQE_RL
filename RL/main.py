@@ -14,13 +14,18 @@ if __name__ == "__main__":
     # Parameter for NQE
     NQE_iterations = 2
 
-    # Parameter for RL_legacy
+    # Parameter for RL
     gamma = 0.98
     RL_learning_rate = 0.01
     state_size = data_size ** 2
     action_size = 5  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 22
+    episodes = 22  ## TODO DQN의 경우는 warm up start때문에 2000번쯤 해야하나?
     max_steps = 8
+
+    # Parameter for DQN, TODO Dynamic for now, need to check
+    buffer_size = episodes * max_steps * 2
+    warm_up = int(buffer_size / 20)
+    target_interval = int(buffer_size / 10)
 
     # Parameters for QCNN
     QCNN_steps = 2
