@@ -4,25 +4,25 @@ import torch
 
 
 class QASEnv(gym.Env):
-    def __init__(
-            self,
-            num_of_qubit: int = 4,
-            max_timesteps: int = 14 * 3,  # N_layers == 3
-            batch_size: int = 25
-    ):
+    def __init__(self,
+                 num_of_qubit: int = 4,
+                 max_timesteps: int = 14 * 3,  # N_layers == 3
+                 batch_sz: int = 25
+                 ):
         super().__init__()
         self.simulator = qml.device('default.qubit', wires=num_of_qubit)
         self.qubits = self.simulator.wires.tolist()
         self.max_timesteps = max_timesteps
-        self.batch_size = batch_size
+        self.batch_sz = batch_sz
 
     def reset(self):
         dummy_action = [None for _ in range(len(self.qubits))]
-        dummy_input = [[0 for _ in self.qubits] for _ in range(self.batch_size)]
+        dummy_input = [[0 for _ in self.qubits] for _ in range(self.batch_sz)]
 
         self.circuit_gates_x1 = [self.select_action(dummy_action, dummy_input)]
         self.circuit_gates_x2 = [self.select_action(dummy_action, dummy_input)]
         self.circuit_gates_x = []
+
         return self.get_obs()
 
     def select_action(self, action, input):
@@ -45,6 +45,7 @@ class QASEnv(gym.Env):
                 elif action[qubit] == 4:
                     action_set += [qml.CNOT(wires=[qubit, next_qubit])]
             action_sets.append(action_set)
+
         return action_sets
 
     def compute_state_stats(self, measure_probs):

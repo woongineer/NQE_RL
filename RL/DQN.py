@@ -12,19 +12,19 @@ Transition = namedtuple('Transition',
 
 
 class DQNNetwork(nn.Module):
-    def __init__(self, state_size, action_size, num_of_qubits):
+    def __init__(self, state_sz, action_sz, num_of_qubits):
         super(DQNNetwork, self).__init__()
         self.state_linear_relu_stack = nn.Sequential(
-            nn.Linear(state_size * 4, state_size * 8),
+            nn.Linear(state_sz * 4, state_sz * 8),
             nn.ReLU(),
-            nn.Linear(state_size * 8, state_size * 4),
+            nn.Linear(state_sz * 8, state_sz * 4),
         )
         # 각 큐빗에 대한 Q-값을 출력하는 레이어
         self.action_value_layers = nn.ModuleList(
             [nn.Sequential(
-                nn.Linear(state_size * 4, action_size * 2),
+                nn.Linear(state_sz * 4, action_sz * 2),
                 nn.ReLU(),
-                nn.Linear(action_size * 2, action_size),
+                nn.Linear(action_sz * 2, action_sz),
             ) for _ in range(num_of_qubits)]
         )
 
@@ -32,12 +32,11 @@ class DQNNetwork(nn.Module):
         # state: [batch_size, state_size * 4]
         state_new = self.state_linear_relu_stack(state)
         q_values = []
-        for qubit_action_value_layer in self.action_value_layers:
-            q_value = qubit_action_value_layer(
-                state_new)  # [batch_size, action_size]
+        for action_value_layer in self.action_value_layers:
+            q_value = action_value_layer(state_new)  # [batch_size, action_size]
             q_values.append(q_value)
         # q_values를 [batch_size, num_of_qubits, action_size]로 변환
-        q_values = torch.stack(q_values, dim=0)  # [batch_size, num_of_qubits, action_size]
+        q_values = torch.stack(q_values, dim=0)
         return q_values  # [batch_size, num_of_qubits, action_size]
 
 
@@ -48,24 +47,24 @@ class ReplayBuffer:
     def push(self, *args):
         self.memory.append(Transition(*args))
 
-    def sample(self, batch_size):
-        batch = random.sample(self.memory, batch_size)
-        # Transition의 요소별로 묶어서 반환
+    def sample(self, batch_sz):
+        batch = random.sample(self.memory, batch_sz)
         return Transition(*zip(*batch))
 
     def __len__(self):
         return len(self.memory)
 
 
-def train_dqn(X_train_transformed, data_size, action_size, Y_train, q_policy,
+def train_dqn(X_train_transformed, data_sz, action_sz, Y_train, q_policy,
               q_target, optimizer, env, num_episodes, gamma, replay_buffer,
-              batch_size, warm_up, target_interval):
-    policy_losses = []  # 손실 값을 저장할 리스트
+              batch_sz, warm_up, target_interval):
+    policy_losses = []
     total_step = 0
 
     for episode in range(num_episodes):
-        X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train_transformed,
-                                               Y_train)
+        X1_batch, X2_batch, Y_batch = new_data(batch_sz=batch_sz,
+                                               X=X_train_transformed,
+                                               Y=Y_train)
         state, _ = env.reset()
 
         done = False
@@ -74,11 +73,10 @@ def train_dqn(X_train_transformed, data_size, action_size, Y_train, q_policy,
         while not done:
             total_step += 1
             # Epsilon-greedy 정책
-            epsilon = 0.01  # 에피소드에 따라 감소시키는 방법을 사용할 수 있습니다.
+            epsilon = 0.01  ##TODO 에피소드에 따라 감소??
             random_number = random.random()
             if random_number < epsilon:
-                # 랜덤 행동 선택
-                action = torch.randint(0, action_size, (data_size,), dtype=torch.long)
+                action = torch.randint(0, action_sz, (data_sz,))
             else:
                 # Q-값에 따라 행동 선택
                 with torch.no_grad():
@@ -86,9 +84,10 @@ def train_dqn(X_train_transformed, data_size, action_size, Y_train, q_policy,
                     action = torch.max(q_values, dim=1)[1]
 
             # 환경에서 다음 상태, 보상 등 얻기
-            next_state, reward, done = env.step(action.numpy(),
-                                                X1_batch.numpy(),
-                                                X2_batch.numpy(), Y_batch)
+            next_state, reward, done = env.step(action=action.numpy(),
+                                                X1=X1_batch.numpy(),
+                                                X2=X2_batch.numpy(),
+                                                Y_batch=Y_batch)
             total_reward += reward
 
             # 리플레이 버퍼에 저장
@@ -99,7 +98,7 @@ def train_dqn(X_train_transformed, data_size, action_size, Y_train, q_policy,
             # 일정 시간마다 학습
             if len(replay_buffer) >= warm_up:  ##TODO
                 # 미니배치 샘플링
-                transitions = replay_buffer.sample(batch_size)
+                transitions = replay_buffer.sample(batch_sz)
                 batch = Transition(*transitions)
 
                 # 배치 데이터 처리
@@ -111,18 +110,21 @@ def train_dqn(X_train_transformed, data_size, action_size, Y_train, q_policy,
 
                 # 현재 Q-값 계산
                 q_values = q_policy(state_batch).permute(1, 0, 2)
-                action_batch_expanded = action_batch.unsqueeze(-1)
-                state_action_values = q_values.gather(2, action_batch_expanded).squeeze(-1)
+                action_batch_sqz = action_batch.unsqueeze(-1)
+                action_values = q_values.gather(2, action_batch_sqz).squeeze(-1)
 
                 # 타깃 Q-값 계산
                 with torch.no_grad():
                     next_q_values = q_target(next_state_batch).permute(1, 0, 2)
                     max_next_q_values = next_q_values.max(dim=2)[0]
-                    target_values = reward_batch.unsqueeze(1) + gamma * max_next_q_values * (1 - done_batch.unsqueeze(1))
+                    target_values = reward_batch.unsqueeze(1) + \
+                                    gamma * \
+                                    max_next_q_values * \
+                                    (1 - done_batch.unsqueeze(1))
 
                 # 손실 계산
                 loss_fn = nn.MSELoss()
-                loss = loss_fn(state_action_values, target_values)
+                loss = loss_fn(action_values, target_values)
 
                 # 모델 최적화
                 optimizer.zero_grad()
@@ -142,20 +144,20 @@ def train_dqn(X_train_transformed, data_size, action_size, Y_train, q_policy,
 
 
 # Function to generate action sequence
-def generate_DQN_action_sequence(q_policy, batch_size, data_size,
+def generate_DQN_action_sequence(q_policy, batch_sz, data_sz,
                                  X_train_transformed, max_steps):
-    env_eval = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
-                      batch_size=batch_size)
+    env_eval = QASEnv(num_of_qubit=data_sz, max_timesteps=max_steps,
+                      batch_sz=batch_sz)
     state, _ = env_eval.reset()
     state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-    action_sequence = []
+    action_seq = []
 
     for step in range(max_steps):
         with torch.no_grad():
             q_values = q_policy(state)  # [1, num_of_qubits, action_size]
             action = q_values.max(dim=2)[1]  # [1, num_of_qubits]
 
-        action_sequence.append(action.squeeze(0).numpy())  # [num_of_qubits]
+        action_seq.append(action.squeeze(0).numpy())  # [num_of_qubits]
 
         # 다음 상태 얻기
         next_state = env_eval.step_eval(action.squeeze(0).numpy(),
@@ -165,4 +167,4 @@ def generate_DQN_action_sequence(q_policy, batch_size, data_size,
         if step % 3 == 0:
             print(f'{step + 1}/{max_steps} actions generated')
 
-    return action_sequence
+    return action_seq

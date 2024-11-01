@@ -9,10 +9,10 @@ dev = qml.device('default.qubit', wires=4)
 
 
 class NQEModel(torch.nn.Module):
-    def __init__(self, action_sequence=None):
+    def __init__(self, action_seq=None):
         super().__init__()
-        self.action_sequence = action_sequence
-        if action_sequence is None:
+        self.action_seq = action_seq
+        if action_seq is None:
             # Use quantum_embedding_zz
             @qml.qnode(dev, interface="torch")
             def circuit(inputs):
@@ -23,9 +23,9 @@ class NQEModel(torch.nn.Module):
             # Use quantum_embedding_rl
             @qml.qnode(dev, interface="torch")
             def circuit(inputs):
-                quantum_embedding_rl(inputs[0:4], self.action_sequence)
+                quantum_embedding_rl(inputs[0:4], self.action_seq)
                 qml.adjoint(quantum_embedding_rl)(inputs[4:8],
-                                                  self.action_sequence)
+                                                  self.action_seq)
                 return qml.probs(wires=range(4))
         self.qlayer1 = qml.qnn.TorchLayer(circuit, weight_shapes={})
         self.linear_relu_stack1 = nn.Sequential(
@@ -45,15 +45,15 @@ class NQEModel(torch.nn.Module):
 
 
 # Function to train NQE
-def train_NQE(X_train, Y_train, NQE_iterations, batch_size,
-              action_sequence=None):
-    NQE_model = NQEModel(action_sequence)
+def train_NQE(X_train, Y_train, NQE_iter, batch_sz,
+              action_seq=None):
+    NQE_model = NQEModel(action_seq)
     NQE_model.train()
     NQE_loss_fn = torch.nn.MSELoss()
     NQE_opt = torch.optim.SGD(NQE_model.parameters(), lr=0.01)
     NQE_losses = []
-    for it in range(NQE_iterations):
-        X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
+    for it in range(NQE_iter):
+        X1_batch, X2_batch, Y_batch = new_data(batch_sz, X_train, Y_train)
         pred = NQE_model(X1_batch, X2_batch)
         loss = NQE_loss_fn(pred, Y_batch)
 

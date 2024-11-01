@@ -3,14 +3,14 @@ import pennylane as qml
 import torch
 
 
-def compute_trace_distance(data_size, NQE_model, action_sequence, X_class0,
+def compute_trace_distance(data_sz, NQE_model, action_seq, X_class0,
                            X_class1):
-    dev = qml.device('default.qubit', wires=data_size)
+    dev = qml.device('default.qubit', wires=data_sz)
 
-    # Define the quantum circuit using the action_sequence
+    # Define the quantum circuit using the action_seq
     def quantum_embedding_rl(x):
-        for action in action_sequence:
-            for qubit_idx in range(data_size):
+        for action in action_seq:
+            for qubit_idx in range(data_sz):
                 if action[qubit_idx] == 0:
                     qml.Hadamard(wires=qubit_idx)
                 elif action[qubit_idx] == 1:
@@ -20,13 +20,13 @@ def compute_trace_distance(data_size, NQE_model, action_sequence, X_class0,
                 elif action[qubit_idx] == 3:
                     qml.RZ(x[qubit_idx], wires=qubit_idx)
                 elif action[qubit_idx] == 4:
-                    qml.CNOT(wires=[qubit_idx, (qubit_idx + 1) % data_size])
+                    qml.CNOT(wires=[qubit_idx, (qubit_idx + 1) % data_sz])
 
     # Define a qnode to compute the density matrix
     @qml.qnode(dev)
     def density_matrix_circuit(x):
         quantum_embedding_rl(x)
-        return qml.density_matrix(wires=range(data_size))
+        return qml.density_matrix(wires=range(data_sz))
 
     # Function to get transformed x using NQE_model
     def get_transformed_x(x):
@@ -54,6 +54,6 @@ def compute_trace_distance(data_size, NQE_model, action_sequence, X_class0,
     # Compute trace distance
     rho_diff = rho0 - rho1
     eigvals = np.linalg.eigvals(rho_diff)
-    trace_distance = 0.5 * np.sum(np.abs(eigvals))
+    trace_dist = 0.5 * np.sum(np.abs(eigvals))
 
-    return trace_distance
+    return trace_dist

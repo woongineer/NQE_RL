@@ -24,9 +24,9 @@ def quantum_embedding_zz(input):
         exp_ZZ2(input[3], input[0], wires=[3, 0])
 
 
-def quantum_embedding_rl(x, action_sequence):
-    for action in action_sequence:
-        for qubit_idx in range(len(x)):  # len(x)==data_size, 어떻게 끌어올지 모르겠음
+def quantum_embedding_rl(x, action_seq):
+    for action in action_seq:
+        for qubit_idx in range(len(x)):  # len(x)==data_sz, 어떻게 끌어올지 모르겠음
             if action[qubit_idx] == 0:
                 qml.Hadamard(wires=qubit_idx)
             elif action[qubit_idx] == 1:
