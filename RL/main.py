@@ -23,7 +23,7 @@ if __name__ == "__main__":
     max_steps = 8
 
     # Parameter for DQN, TODO Dynamic for now, need to check
-    buffer_sz = episodes * max_steps * 2
+    buffer_sz = episodes * (max_steps-1) * 2
     warm_up = int(buffer_sz / 20)
     target_interval = int(buffer_sz / 10)
 

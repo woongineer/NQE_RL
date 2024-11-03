@@ -58,7 +58,7 @@ class ReplayBuffer:
 def train_dqn(X_train_transformed, data_sz, action_sz, Y_train, q_policy,
               q_target, optimizer, env, num_episodes, gamma, replay_buffer,
               batch_sz, warm_up, target_interval):
-    policy_losses = []
+    total_rewards = []
     total_step = 0
 
     for episode in range(num_episodes):
@@ -73,7 +73,7 @@ def train_dqn(X_train_transformed, data_sz, action_sz, Y_train, q_policy,
         while not done:
             total_step += 1
             # Epsilon-greedy 정책
-            epsilon = 0.01  ##TODO 에피소드에 따라 감소??
+            epsilon = max(0.01, 1 - (episode / num_episodes))  ##TODO
             random_number = random.random()
             if random_number < epsilon:
                 action = torch.randint(0, action_sz, (data_sz,))
@@ -136,11 +136,11 @@ def train_dqn(X_train_transformed, data_sz, action_sz, Y_train, q_policy,
         # 타깃 네트워크 업데이트
         if total_step % target_interval == 0:  ## 이렇게 하면 warm up start 이후부터, interval 될때까지는 target network가 random parameterized 네트워크인긴 함. 그게 보통이라고 하네...
             q_target.load_state_dict(q_policy.state_dict())
-        policy_losses.append(total_reward)
+        total_rewards.append(total_reward)
 
         print(f'Episode {episode + 1}/{num_episodes},Tt Reward: {total_reward}')
 
-    return q_policy, policy_losses
+    return q_policy, total_rewards
 
 
 # Function to generate action sequence

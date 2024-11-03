@@ -128,11 +128,12 @@ class QASEnv(gym.Env):
 
         state_stats, measure_0s = self.get_obs()
 
-        loss_fn = torch.nn.MSELoss(reduction='none')  # TODO Need discussion
+        loss_fn = torch.nn.MSELoss()  # TODO Need discussion
         measure_0s = torch.stack([torch.tensor(i) for i in measure_0s])
         measure_loss = loss_fn(measure_0s, Y_batch)
 
-        reward = 1 - measure_loss.mean()  # TODO 개별 배치마다 따로 prob을 뽑은게 아니니까 reward도 통합해야 할 듯, measure_loss를 minimize하는게 목적이니 작을수록 큰 reward
-        terminal = len(self.circuit_gates_x1) >= self.max_timesteps
+        reward = 1 - measure_loss  # TODO 개별 배치마다 따로 prob을 뽑은게 아니니까 reward도 통합해야 할 듯, measure_loss를 minimize하는게 목적이니 작을수록 큰 reward
+        terminal = (reward > 0.9) or (
+                    len(self.circuit_gates_x1) >= self.max_timesteps)
 
         return state_stats, reward, terminal
