@@ -155,6 +155,7 @@ def DQN_iterator(RL_model, total_iter, NQE_iter, episodes,
     NQE_models = []
     Policy_models = []
     action_seqs = []
+    print(f"warm start at step {warm_up}, or episode {warm_up/(max_steps-1)}")
 
     for iter in range(total_iter):
         print(f"Starting iteration {iter + 1}/{total_iter}")

@@ -12,15 +12,15 @@ if __name__ == "__main__":
     batch_sz = 25
 
     # Parameter for NQE
-    NQE_iter = 2
+    NQE_iter = 50
 
     # Parameter for RL
     gamma = 0.98
     RL_lr = 0.01
     state_sz = data_sz ** 2
-    action_sz = 5  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 220  ## TODO DQN의 경우는 warm up start때문에 2000번쯤 해야하나?
-    max_steps = 8
+    action_sz = 11  # Number of possible actions, RX, RY, RZ, H, CX
+    episodes = 1000  ## TODO DQN의 경우는 warm up start때문에 2000번쯤 해야하나?
+    max_steps = 15
 
     # Parameter for DQN, TODO Dynamic for now, need to check
     buffer_sz = episodes * (max_steps-1) * 2

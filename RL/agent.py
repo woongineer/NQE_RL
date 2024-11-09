@@ -1,5 +1,6 @@
 import gym
 import pennylane as qml
+import numpy as np
 import torch
 
 
@@ -37,13 +38,25 @@ class QASEnv(gym.Env):
                 elif action[qubit] == 0:
                     action_set += [qml.Hadamard(wires=qubit)]
                 elif action[qubit] == 1:
-                    action_set += [qml.RX(input_batch[qubit], wires=qubit)]
+                    action_set += [qml.RX(-2 * (np.pi - input_batch[qubit]), wires=qubit)]
                 elif action[qubit] == 2:
-                    action_set += [qml.RY(input_batch[qubit], wires=qubit)]
+                    action_set += [qml.RY(-2 * (np.pi - input_batch[qubit]), wires=qubit)]
                 elif action[qubit] == 3:
-                    action_set += [qml.RZ(input_batch[qubit], wires=qubit)]
+                    action_set += [qml.RZ(-2 * (np.pi - input_batch[qubit]), wires=qubit)]
                 elif action[qubit] == 4:
                     action_set += [qml.CNOT(wires=[qubit, next_qubit])]
+                elif action[qubit] == 5:
+                    action_set += [qml.RX(-2 * (input_batch[qubit]), wires=qubit)]
+                elif action[qubit] == 6:
+                    action_set += [qml.RY(-2 * (input_batch[qubit]), wires=qubit)]
+                elif action[qubit] == 7:
+                    action_set += [qml.RZ(-2 * (input_batch[qubit]), wires=qubit)]
+                elif action[qubit] == 8:
+                    action_set += [qml.CRZ(-2 * (np.pi - input_batch[qubit]) * (np.pi - input_batch[next_qubit]), wires=[qubit, next_qubit])]
+                elif action[qubit] == 9:
+                    action_set += [qml.CRY(-2 * (np.pi - input_batch[qubit]) * (np.pi - input_batch[next_qubit]), wires=[qubit, next_qubit])]
+                elif action[qubit] == 10:
+                    action_set += [qml.CRX(-2 * (np.pi - input_batch[qubit]) * (np.pi - input_batch[next_qubit]), wires=[qubit, next_qubit])]
             action_sets.append(action_set)
 
         return action_sets
