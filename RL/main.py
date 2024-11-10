@@ -12,7 +12,7 @@ if __name__ == "__main__":
     batch_sz = 25
 
     # Parameter for NQE
-    NQE_iter = 50
+    NQE_iter = 500
 
     # Parameter for RL
     gamma = 0.98

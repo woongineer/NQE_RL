@@ -2,6 +2,7 @@ import pennylane as qml
 import torch
 from pennylane import numpy as np
 from torch import nn
+import pandas as pd
 import random
 import matplotlib.pyplot as plt
 
@@ -38,11 +39,11 @@ def quantum_embedding_rl(x, action_sequence):
             if action[qubit_idx] == 0:
                 qml.Hadamard(wires=qubit_idx)
             elif action[qubit_idx] == 1:
-                qml.RX(x[qubit_idx], wires=qubit_idx)
+                qml.RX(-2*x[qubit_idx], wires=qubit_idx)
             elif action[qubit_idx] == 2:
-                qml.RY(x[qubit_idx], wires=qubit_idx)
+                qml.RY(-2*x[qubit_idx], wires=qubit_idx)
             elif action[qubit_idx] == 3:
-                qml.RZ(x[qubit_idx], wires=qubit_idx)
+                qml.RZ(-2*x[qubit_idx], wires=qubit_idx)
             elif action[qubit_idx] == 4:
                 qml.CNOT(wires=[qubit_idx, (qubit_idx + 1) % data_size])
 
@@ -62,10 +63,9 @@ def stater(strat, X1_batch, X2_batch, action_sequence=None):
     plt.close()
 
 
-
 # Define the NQE Model
 class NQEModel(torch.nn.Module):
-    def __init__(self, tick=None, action_sequence=None,):
+    def __init__(self, tick=None, action_sequence=None, ):
         super().__init__()
         self.action_sequence = action_sequence
         if tick == 'zz':
@@ -80,7 +80,7 @@ class NQEModel(torch.nn.Module):
             def circuit(inputs):
                 quantum_embedding_rl(inputs[0:4], self.action_sequence)
                 qml.adjoint(quantum_embedding_rl)(inputs[4:8],  ##TODO 되는거 맞나?
-                                             self.action_sequence)
+                                                  self.action_sequence)
                 return qml.probs(wires=range(4))
 
         self.qlayer1 = qml.qnn.TorchLayer(circuit, weight_shapes={})
@@ -103,7 +103,6 @@ class NQEModel(torch.nn.Module):
 # Function to train NQE
 def train_NQE(X_train, Y_train, NQE_iterations, batch_size, tick,
               action_sequence=None):
-
     # NQE_model = NQEModel(tick='zz')
     NQE_model = NQEModel(tick=tick, action_sequence=action_sequence)
 
@@ -120,7 +119,7 @@ def train_NQE(X_train, Y_train, NQE_iterations, batch_size, tick,
 
         if it == 0:
             initial_loss = loss.item()
-        elif it == (NQE_iterations-1):
+        elif it == (NQE_iterations - 1):
             final_loss = loss.item()
         NQE_opt.zero_grad()
         loss.backward()
@@ -129,6 +128,19 @@ def train_NQE(X_train, Y_train, NQE_iterations, batch_size, tick,
         if it % 3 == 0:
             print(f"Iterations: {it} Loss: {loss.item()}")
     return initial_loss, final_loss
+
+
+def distribution_check(X_train, Y_train, batch_size, tick, action_sequence):
+    NQE_model = NQEModel(tick=tick, action_sequence=action_sequence)
+
+    NQE_model.train()
+    NQE_loss_fn = torch.nn.MSELoss()
+
+    X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
+    pred = NQE_model(X1_batch, X2_batch)
+    loss = NQE_loss_fn(pred, Y_batch)
+
+    return loss.item()
 
 
 # Function to transform data using NQE
@@ -144,6 +156,43 @@ def transform_data(NQE_model, X_data):
     return transformed_data
 
 
+def draw_circuit(depth, action_seq, minmax):
+    @qml.qnode(dev)
+    def fig_circ(action_seq):
+        quantum_embedding_rl(np.array([1, 1, 1, 1]), action_seq)
+        return qml.probs(wires=range(4))
+
+    fig, ax = qml.draw_mpl(fig_circ)(action_seq)
+    fig.text(0.5, 0.95, f"{minmax}", fontsize=14, ha='center', va='top')
+
+    action_text = "\n".join(
+        [str(action_seq[i:i + 5]) for i in
+         range(0, len(action_seq), 5)]
+    )
+    fig.text(0.1, 0.1, f'{action_text}', fontsize=8, wrap=True)
+
+
+    fig.savefig(f"dist_{depth}_{minmax}.png")
+
+def draw_dist(loss, depth):
+    plt.clf()
+    plt.hist(loss, bins=100, range=(0, 1))
+
+    min_loss = loss.min()
+    max_loss = loss.max()
+    median_loss = loss.median()
+    mean_loss = loss.mean()
+    variance_loss = loss.var()
+
+    plt.text(0.02, plt.ylim()[1] * 0.9, f"Min: {min_loss:.4f}", fontsize=10)
+    plt.text(0.02, plt.ylim()[1] * 0.85, f"Max: {max_loss:.4f}", fontsize=10)
+    plt.text(0.02, plt.ylim()[1] * 0.8, f"Median: {median_loss:.4f}",
+             fontsize=10)
+    plt.text(0.02, plt.ylim()[1] * 0.75, f"Mean: {mean_loss:.4f}", fontsize=10)
+    plt.text(0.02, plt.ylim()[1] * 0.7, f"Variance: {variance_loss:.4f}", fontsize=10)
+
+
+    plt.savefig(f"dist_{depth}.png")
 
 
 # Main iterative process
@@ -154,24 +203,33 @@ if __name__ == "__main__":
 
     # Parameter for NQE
     N_layers = 1
-    NQE_iterations = 50
+    NQE_iterations = 1
 
     # Load data
     X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='mnist',
                                                              reduction_sz=data_size)
 
-    action_sequence = [[random.choice(range(5)) for _ in range(4)] for _ in range(15)]
+    for depth_elem in [3, 4, 5, 6, 7, 8]:
+        print(f'{depth_elem} begin')
+        depth = depth_elem
+        dist_info = []
+        for k in range(1000):
+            print(f'{k}') if k % 20 == 0 else None
+            action_sequence = [[random.choice(range(5)) for _ in range(4)] for _ in
+                               range(depth)]
+            loss = distribution_check(X_train, Y_train, batch_size, 'rl',
+                                      action_sequence)
+            dist_info.append({'action_sequence': action_sequence,
+                              'loss': loss})
 
-    # action_sequence.insert(0, [0, 0, 0, 0])
-    # action_sequence.insert(0, [4, 4, 4, 4])
-    # action_sequence.insert(0, [0, 0, 0, 0])
-    # action_sequence.pop()
-    # action_sequence.pop()
-    # action_sequence.pop()
+        dist_info_df = pd.DataFrame(dist_info)
 
-    # Step 1: Train NQE
-    initial_loss, final_loss = train_NQE(X_train, Y_train, NQE_iterations,
-                                      batch_size, 'rl', action_sequence)
+        draw_dist(dist_info_df['loss'], depth)
 
-    print('dd')
+        min_loss_row = dist_info_df.loc[dist_info_df['loss'].idxmin()]
+        min_loss_action_sequence = min_loss_row['action_sequence']
+        draw_circuit(depth, min_loss_action_sequence, 'min')
 
+        max_loss_row = dist_info_df.loc[dist_info_df['loss'].idxmax()]
+        max_loss_action_sequence = max_loss_row['action_sequence']
+        draw_circuit(depth, max_loss_action_sequence, 'max')
