@@ -127,7 +127,7 @@ def train_NQE(X_train, Y_train, NQE_iterations, batch_size, tick,
 
         if it % 3 == 0:
             print(f"Iterations: {it} Loss: {loss.item()}")
-    return initial_loss, final_loss
+    return initial_loss, final_loss,
 
 
 def distribution_check(X_train, Y_train, batch_size, tick, action_sequence):
@@ -140,7 +140,7 @@ def distribution_check(X_train, Y_train, batch_size, tick, action_sequence):
     pred = NQE_model(X1_batch, X2_batch)
     loss = NQE_loss_fn(pred, Y_batch)
 
-    return loss.item()
+    return loss.item(), Y_batch.numpy().sum()
 
 
 # Function to transform data using NQE
@@ -174,7 +174,9 @@ def draw_circuit(depth, action_seq, minmax):
 
     fig.savefig(f"dist_{depth}_{minmax}.png")
 
-def draw_dist(loss, depth):
+def draw_dist(df, depth):
+    loss = df['loss']
+
     plt.clf()
     plt.hist(loss, bins=100, range=(0, 1))
 
@@ -184,8 +186,13 @@ def draw_dist(loss, depth):
     mean_loss = loss.mean()
     variance_loss = loss.var()
 
-    plt.text(0.02, plt.ylim()[1] * 0.9, f"Min: {min_loss:.4f}", fontsize=10)
-    plt.text(0.02, plt.ylim()[1] * 0.85, f"Max: {max_loss:.4f}", fontsize=10)
+    min_loss_row = df.loc[loss.idxmin()]
+    min_loss_y = min_loss_row['y_num']
+    max_loss_row = df.loc[loss.idxmax()]
+    max_loss_y = max_loss_row['y_num']
+
+    plt.text(0.02, plt.ylim()[1] * 0.9, f"Min: {min_loss:.4f}, y: {min_loss_y}", fontsize=10)
+    plt.text(0.02, plt.ylim()[1] * 0.85, f"Max: {max_loss:.4f}, y: {max_loss_y}", fontsize=10)
     plt.text(0.02, plt.ylim()[1] * 0.8, f"Median: {median_loss:.4f}",
              fontsize=10)
     plt.text(0.02, plt.ylim()[1] * 0.75, f"Mean: {mean_loss:.4f}", fontsize=10)
@@ -217,14 +224,15 @@ if __name__ == "__main__":
             print(f'{k}') if k % 20 == 0 else None
             action_sequence = [[random.choice(range(5)) for _ in range(4)] for _ in
                                range(depth)]
-            loss = distribution_check(X_train, Y_train, batch_size, 'rl',
+            loss, y_num = distribution_check(X_train, Y_train, batch_size, 'rl',
                                       action_sequence)
             dist_info.append({'action_sequence': action_sequence,
-                              'loss': loss})
+                              'loss': loss,
+                              'y_num': y_num})
 
         dist_info_df = pd.DataFrame(dist_info)
 
-        draw_dist(dist_info_df['loss'], depth)
+        draw_dist(dist_info_df, depth)
 
         min_loss_row = dist_info_df.loc[dist_info_df['loss'].idxmin()]
         min_loss_action_sequence = min_loss_row['action_sequence']
