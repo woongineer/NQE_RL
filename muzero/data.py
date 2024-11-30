@@ -41,10 +41,10 @@ def data_load_and_process(dataset='mnist', reduction_sz: int = 4):
     X_test = PCA(reduction_sz).fit_transform(x_test)
     x_train, x_test = [], []
     for x in X_train:
-        x = (x - x.min()) * (np.pi / (x.max() - x.min()))
+        x = (x - x.min()) * (2 * np.pi / (x.max() - x.min()))
         x_train.append(x)
     for x in X_test:
-        x = (x - x.min()) * (np.pi / (x.max() - x.min()))
+        x = (x - x.min()) * (2 * np.pi / (x.max() - x.min()))
         x_test.append(x)
     return x_train[:400], x_test[:100], y_train[:400], y_test[:100]
 
