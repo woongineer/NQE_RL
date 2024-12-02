@@ -6,10 +6,31 @@ import pandas as pd
 import random
 import matplotlib.pyplot as plt
 
-from data import new_data, data_load_and_process
+from data import data_load_and_process
 
 # Set your device
 dev = qml.device('default.qubit', wires=4)
+
+def new_data(batch_sz, X, Y):
+    X1_new, X2_new, Y_new = [], [], []
+    for i in range(batch_sz):
+        n, m = np.random.randint(len(X)), np.random.randint(len(X))
+        X1_new.append(X[n])
+        X2_new.append(X[m])
+        Y_new.append(1 if Y[n] == Y[m] else 0)
+
+    # X1_new 처리
+    X1_new_array = np.array(X1_new)
+    X1_new_tensor = torch.from_numpy(X1_new_array).float()
+
+    # X2_new 처리
+    X2_new_array = np.array(X2_new)
+    X2_new_tensor = torch.from_numpy(X2_new_array).float()
+
+    # Y_new 처리
+    Y_new_array = np.array(Y_new)
+    Y_new_tensor = torch.from_numpy(Y_new_array).float()
+    return X1_new_tensor, X2_new_tensor, Y_new_tensor
 
 
 def exp_Z(x, wires):
@@ -216,14 +237,23 @@ if __name__ == "__main__":
     X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='mnist',
                                                              reduction_sz=data_size)
 
-    for depth_elem in [3, 4, 5, 6, 7, 8]:
+    # weights = [0.8, 0.05, 0.05, 0.05, 0.05]
+    # weights = [0.05, 0.05, 0.05, 0.05, 0.8]
+    weights = [0.05, 0.05, 0.8, 0.05, 0.05]
+
+    for depth_elem in [3, 4, 5, 6, 7, 8, 10, 15]:
         print(f'{depth_elem} begin')
         depth = depth_elem
         dist_info = []
-        for k in range(1000):
+        for k in range(400):
             print(f'{k}') if k % 20 == 0 else None
-            action_sequence = [[random.choice(range(5)) for _ in range(4)] for _ in
-                               range(depth)]
+            # action_sequence = [
+            #     [random.choice(range(5)) for _ in range(4)] for _ in range(depth)
+            # ]
+            action_sequence = [
+                [random.choices(range(5), weights=weights, k=1)[0] for _ in
+                 range(4)] for _ in range(depth)
+            ]
             loss, y_num = distribution_check(X_train, Y_train, batch_size, 'rl',
                                       action_sequence)
             dist_info.append({'action_sequence': action_sequence,
@@ -233,11 +263,11 @@ if __name__ == "__main__":
         dist_info_df = pd.DataFrame(dist_info)
 
         draw_dist(dist_info_df, depth)
-
-        min_loss_row = dist_info_df.loc[dist_info_df['loss'].idxmin()]
-        min_loss_action_sequence = min_loss_row['action_sequence']
-        draw_circuit(depth, min_loss_action_sequence, 'min')
-
-        max_loss_row = dist_info_df.loc[dist_info_df['loss'].idxmax()]
-        max_loss_action_sequence = max_loss_row['action_sequence']
-        draw_circuit(depth, max_loss_action_sequence, 'max')
+        #
+        # min_loss_row = dist_info_df.loc[dist_info_df['loss'].idxmin()]
+        # min_loss_action_sequence = min_loss_row['action_sequence']
+        # draw_circuit(depth, min_loss_action_sequence, 'min')
+        #
+        # max_loss_row = dist_info_df.loc[dist_info_df['loss'].idxmax()]
+        # max_loss_action_sequence = max_loss_row['action_sequence']
+        # draw_circuit(depth, max_loss_action_sequence, 'max')
