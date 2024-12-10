@@ -899,15 +899,15 @@ config = {
     # Simulation and environment Config
     'action_space_size': 2,  # number of action
     'state_shape': 4,
-    'games_per_epoch': 20,
-    'num_epochs': 25,
-    'train_per_epoch': 30,
-    'episodes_per_test': 10,
+    'games_per_epoch': 3,
+    'num_epochs': 4,
+    'train_per_epoch': 5,
+    'episodes_per_test': 6,
     'cartpole_stop_reward': 200,
 
     'visit_softmax_temperature_fn': 1,
     'max_moves': 200,
-    'num_simulations': 50,
+    'num_simulations': 7,
     'discount': 0.997,
     'min_value': 0,
     'max_value': 200,
