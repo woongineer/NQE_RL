@@ -1,32 +1,21 @@
 # use code from (all explanations there)
 # https://www.kaggle.com/code/minaiyuki/muzero-model-based-rl-with-pytorch
 
+import math
+import os
 import random
 from collections import deque
-import math
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pennylane as qml
 import torch
-from pennylane import numpy as np
-from torch import nn
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.functional import softmax
 
 from data import data_load_and_process as dataprep
 from data import new_data
-import numpy as np
-import collections
-from collections import deque
-import gym
-import itertools
-import random
-import os
-import matplotlib.pyplot as plt
-import math
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.nn.functional import softmax
 
 # Set your device
 n_qubit = 4
@@ -97,7 +86,6 @@ class Game:
     def take_action(self, action, env):
         """Take an action and store the action/reward/new_state into history
         """
-        # TODO step안에 self.actions로 get_fidelity 넣어서 reward도 출력하게 하기
         observation, reward, done = env.step(action)  ## TODO 여기서 reward
         self.current_state = observation
         self.action_history.append(action)
@@ -209,11 +197,24 @@ class RepresentationNetwork(nn.Module):
 
     def forward(self, action_sequence_input):
         embedded = self.action_embedding(action_sequence_input)
+        if embedded.dim() == 2:
+            embedded = embedded.unsqueeze(0)
+
         lstm_out, _ = self.lstm(embedded)[-1]
 
         latent_state = self.fc(lstm_out[-1])
 
         return latent_state
+
+    # def forward(self, action_sequence_input):
+    #     embedded = self.action_embedding(action_sequence_input)
+    #     if embedded.dim() == 2:
+    #         embedded = embedded.unsqueeze(0)
+    #     lstm_out, (h_n, c_n) = self.lstm(embedded)
+    #
+    #     latent_state = self.fc(h_n[-1])
+    #
+    #     return latent_state
 
 
 class ValueNetwork(nn.Module):
@@ -309,9 +310,10 @@ class RecurrentModel(nn.Module):
 
 class Networks(nn.Module):
     def __init__(self, representation_net, value_net, policy_net, dynamic_net,
-                 reward_net, max_value, action_size):
+                 reward_net, action_size, value_support_size):
         super().__init__()
         self.action_size = action_size
+        self.value_support_size = value_support_size
         self.representation_network = representation_net
         self.value_network = value_net
         self.policy_network = policy_net
@@ -325,7 +327,6 @@ class Networks(nn.Module):
                                               self.reward_network,
                                               self.value_network,
                                               self.policy_network)
-        self.value_support_size = math.ceil(math.sqrt(max_value)) + 1
 
     def _value_transform(self, value_support):
         epsilon = 0.001
@@ -698,8 +699,7 @@ def play_game(config, network: Networks, env):
 
         # Expand the current root node
         curr_state = game.current_state
-        value = mcts.expand_root(root, list(range(config['action_space_size'])),
-                                 network, curr_state)
+        value = mcts.expand_root(root, list(range(config['action_space_size'])), network, curr_state)
         mcts.backpropagate([root], value, config['discount'], min_max_stats)
         mcts.add_exploration_noise(config, root)
 
@@ -758,71 +758,128 @@ def set_seeds(seed=SEED):
     torch.manual_seed(seed)
 
 
+# action_mapping = {
+#     0: 'X',
+#     1: 'Y',
+#     2: 'Z',
+#     3: 'CX',
+#     4: 'CY',
+#     5: 'CZ',
+#     # CRx(π/n)
+#     6: ('CRx_pi_over_n', 1),
+#     7: ('CRx_pi_over_n', 2),
+#     8: ('CRx_pi_over_n', 3),
+#     9: ('CRx_pi_over_n', 4),
+#     10: ('CRx_pi_over_n', 8),
+#     # CRy(π/n)
+#     11: ('CRy_pi_over_n', 1),
+#     12: ('CRy_pi_over_n', 2),
+#     13: ('CRy_pi_over_n', 3),
+#     14: ('CRy_pi_over_n', 4),
+#     15: ('CRy_pi_over_n', 8),
+#     # CRz(π/n)
+#     16: ('CRz_pi_over_n', 1),
+#     17: ('CRz_pi_over_n', 2),
+#     18: ('CRz_pi_over_n', 3),
+#     19: ('CRz_pi_over_n', 4),
+#     20: ('CRz_pi_over_n', 8),
+#     # Rx(πx), Ry(πx), Rz(πx)
+#     21: 'Rx_pi_x',
+#     22: 'Ry_pi_x',
+#     23: 'Rz_pi_x',
+#     # Rx(π/n)
+#     24: ('Rx_pi_over_n', 1),
+#     25: ('Rx_pi_over_n', 2),
+#     26: ('Rx_pi_over_n', 3),
+#     27: ('Rx_pi_over_n', 4),
+#     28: ('Rx_pi_over_n', 8),
+#     # Ry(π/n)
+#     29: ('Ry_pi_over_n', 1),
+#     30: ('Ry_pi_over_n', 2),
+#     31: ('Ry_pi_over_n', 3),
+#     32: ('Ry_pi_over_n', 4),
+#     33: ('Ry_pi_over_n', 8),
+#     # Rz(π/n)
+#     34: ('Rz_pi_over_n', 1),
+#     35: ('Rz_pi_over_n', 2),
+#     36: ('Rz_pi_over_n', 3),
+#     37: ('Rz_pi_over_n', 4),
+#     38: ('Rz_pi_over_n', 8),
+#     # Rx(arctan(x)), Ry(arctan(x)), Rz(arctan(x))
+#     39: 'Rx_arctan_x',
+#     40: 'Ry_arctan_x',
+#     41: 'Rz_arctan_x',
+#     42: 'H',
+# }
+
 action_mapping = {
-    0: 'X',
-    1: 'Y',
-    2: 'Z',
-    3: 'CX',
-    4: 'CY',
-    5: 'CZ',
+    0: 'padding',
+    1: 'X',
+    2: 'Y',
+    3: 'Z',
+    4: 'CX',
+    5: 'CY',
+    6: 'CZ',
     # CRx(π/n)
-    6: ('CRx_pi_over_n', 1),
-    7: ('CRx_pi_over_n', 2),
-    8: ('CRx_pi_over_n', 3),
-    9: ('CRx_pi_over_n', 4),
-    10: ('CRx_pi_over_n', 8),
+    7: ('CRx_pi_over_n', 1),
+    8: ('CRx_pi_over_n', 2),
+    9: ('CRx_pi_over_n', 3),
+    10: ('CRx_pi_over_n', 4),
+    11: ('CRx_pi_over_n', 8),
     # CRy(π/n)
-    11: ('CRy_pi_over_n', 1),
-    12: ('CRy_pi_over_n', 2),
-    13: ('CRy_pi_over_n', 3),
-    14: ('CRy_pi_over_n', 4),
-    15: ('CRy_pi_over_n', 8),
+    12: ('CRy_pi_over_n', 1),
+    13: ('CRy_pi_over_n', 2),
+    14: ('CRy_pi_over_n', 3),
+    15: ('CRy_pi_over_n', 4),
+    16: ('CRy_pi_over_n', 8),
     # CRz(π/n)
-    16: ('CRz_pi_over_n', 1),
-    17: ('CRz_pi_over_n', 2),
-    18: ('CRz_pi_over_n', 3),
-    19: ('CRz_pi_over_n', 4),
-    20: ('CRz_pi_over_n', 8),
+    17: ('CRz_pi_over_n', 1),
+    18: ('CRz_pi_over_n', 2),
+    19: ('CRz_pi_over_n', 3),
+    20: ('CRz_pi_over_n', 4),
+    21: ('CRz_pi_over_n', 8),
     # Rx(πx), Ry(πx), Rz(πx)
-    21: 'Rx_pi_x',
-    22: 'Ry_pi_x',
-    23: 'Rz_pi_x',
+    22: 'Rx_pi_x',
+    23: 'Ry_pi_x',
+    24: 'Rz_pi_x',
     # Rx(π/n)
-    24: ('Rx_pi_over_n', 1),
-    25: ('Rx_pi_over_n', 2),
-    26: ('Rx_pi_over_n', 3),
-    27: ('Rx_pi_over_n', 4),
-    28: ('Rx_pi_over_n', 8),
+    25: ('Rx_pi_over_n', 1),
+    26: ('Rx_pi_over_n', 2),
+    27: ('Rx_pi_over_n', 3),
+    28: ('Rx_pi_over_n', 4),
+    29: ('Rx_pi_over_n', 8),
     # Ry(π/n)
-    29: ('Ry_pi_over_n', 1),
-    30: ('Ry_pi_over_n', 2),
-    31: ('Ry_pi_over_n', 3),
-    32: ('Ry_pi_over_n', 4),
-    33: ('Ry_pi_over_n', 8),
+    30: ('Ry_pi_over_n', 1),
+    31: ('Ry_pi_over_n', 2),
+    32: ('Ry_pi_over_n', 3),
+    33: ('Ry_pi_over_n', 4),
+    34: ('Ry_pi_over_n', 8),
     # Rz(π/n)
-    34: ('Rz_pi_over_n', 1),
-    35: ('Rz_pi_over_n', 2),
-    36: ('Rz_pi_over_n', 3),
-    37: ('Rz_pi_over_n', 4),
-    38: ('Rz_pi_over_n', 8),
+    35: ('Rz_pi_over_n', 1),
+    36: ('Rz_pi_over_n', 2),
+    37: ('Rz_pi_over_n', 3),
+    38: ('Rz_pi_over_n', 4),
+    39: ('Rz_pi_over_n', 8),
     # Rx(arctan(x)), Ry(arctan(x)), Rz(arctan(x))
-    39: 'Rx_arctan_x',
-    40: 'Ry_arctan_x',
-    41: 'Rz_arctan_x',
-    42: 'H',
+    40: 'Rx_arctan_x',
+    41: 'Ry_arctan_x',
+    42: 'Rz_arctan_x',
+    43: 'H',
 }
 
 
 class QASEnv:
-    def __init__(self, max_depth, X_train, Y_train):
+    def __init__(self, max_depth, padding_idx, batch_size, X_train, Y_train):
         super().__init__()
         self.max_depth = max_depth
+        self.padding_idx = padding_idx
+        self.batch_size = batch_size
         self.X_train = X_train
         self.Y_train = Y_train
         self.reset()
 
     def reset(self):
-        X1, X2, Y = new_data(1, X_train, Y_train)
+        X1, X2, Y = new_data(self.batch_size, self.X_train, self.Y_train)
         self.X1 = X1
         self.X2 = X2
         self.Y = Y
@@ -831,7 +888,7 @@ class QASEnv:
         return self.get_observation()
 
     def get_observation(self):
-        obs = torch.zeros(self.max_depth, dtype=torch.long)
+        obs = torch.full((self.max_depth,), self.padding_idx, dtype=torch.long)
         obs[:len(self.actions)] = torch.tensor(self.actions, dtype=torch.long)
         return obs
 
@@ -859,7 +916,7 @@ def get_fidelity(actions, x_1, x_2, y):
     x = torch.concat([x_1, x_2], 1)
     pred = qlayer(x)[:, 0]
     fidelity_loss = torch.nn.MSELoss()(pred, y)
-    reward = 1 - fidelity_loss.item()
+    reward = 50 * (1 - fidelity_loss.item())
     return reward
 
 
@@ -945,6 +1002,8 @@ def apply_gate(gate_info, x_data):
 if __name__ == "__main__":
 
     action_space_size = len(action_mapping)
+    padding_idx = 0
+    batch_size = 25
 
     config = {
         # Environment
@@ -961,7 +1020,7 @@ if __name__ == "__main__":
         'num_simulations': 20,
         'discount': 0.99,
         'min_value': 0,
-        'max_value': 200,
+        'max_value': 20 * 50,  # max_depth * reward
 
         # Root prior exploration noise.
         'root_dirichlet_alpha': 0.2,
@@ -996,18 +1055,18 @@ if __name__ == "__main__":
     set_seeds()
 
     # Create networks
-    action_embed = ActionEmbedding(action_space_size=action_space_size, embedding_size=config['embedding_size'], padding_idx=-1)
+    action_embed = ActionEmbedding(action_space_size=action_space_size, embedding_size=config['embedding_size'], padding_idx=padding_idx)
     rep_net = RepresentationNetwork(action_embedding=action_embed, embedding_size=config['embedding_size'], lstm_size=config['lstm_size'], latent_size=config['latent_size'])
     val_net = ValueNetwork(latent_size=config['latent_size'], hidden_size=config['hidden_size'], value_support_size=value_support_size)
     pol_net = PolicyNetwork(latent_size=config['latent_size'], hidden_size=config['hidden_size'], action_size=action_space_size)
     dyn_net = DynamicNetwork(action_embedding=action_embed, latent_size=config['latent_size'], hidden_size=config['hidden_size'])
     rew_net = RewardNetwork(action_embedding=action_embed, latent_size=config['latent_size'], hidden_size=config['hidden_size'])
-    network = Networks(representation_net=rep_net, value_net=val_net, policy_net=pol_net, dynamic_net=dyn_net, reward_net=rew_net, max_value=config['max_value'], action_size=action_space_size)
+    network = Networks(representation_net=rep_net, value_net=val_net, policy_net=pol_net, dynamic_net=dyn_net, reward_net=rew_net, action_size=action_space_size, value_support_size=value_support_size)
 
     X_train, X_test, Y_train, Y_test = dataprep('kmnist', n_qubit)
 
     # Create environment
-    env = QASEnv(max_depth=config['max_depth'], X_train=X_train, Y_train=Y_train)
+    env = QASEnv(max_depth=config['max_depth'], padding_idx=padding_idx, batch_size=batch_size, X_train=X_train, Y_train=Y_train)
 
     # Create buffer to store games
     replay_buffer = ReplayBuffer(config)

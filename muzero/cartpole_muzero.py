@@ -487,7 +487,7 @@ def update_weights(config, network, optimizer, batch, train_results):
         # reward error is always 0 for initial inference
         value_loss = F.cross_entropy(initial_values, target_value_batch)
         policy_loss = F.cross_entropy(policy_logits,
-                                      torch.tensor(target_policy_batch))
+                                      torch.tensor( ))
         loss = 0.25 * value_loss + policy_loss
 
         total_value_loss = 0.25 * value_loss.item()
