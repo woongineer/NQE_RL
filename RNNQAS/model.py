@@ -26,7 +26,7 @@ class CNNExtract(nn.Module):
 
 
 class CNNLSTM(nn.Module):
-    def __init__(self, feature_dim=16, hidden_dim=64, output_dim=100, num_layers=1):
+    def __init__(self, feature_dim=16, hidden_dim=32, output_dim=100, num_layers=1):
         super(CNNLSTM, self).__init__()
 
         self.cnn_extractor = CNNExtract(in_channels=1, out_channels=feature_dim)
@@ -39,15 +39,15 @@ class CNNLSTM(nn.Module):
         self.fc = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
-        batch_size, z, h, w = x.shape
-        x = x.reshape(batch_size * z, 1, h, w)
+        batch_size, seq_len, h, w = x.shape
+        x = x.view(batch_size * seq_len, 1, h, w)
 
         feat = self.cnn_extractor(x)
-        feat = feat.view(batch_size, z, -1)
+        feat = feat.view(batch_size, seq_len, -1)
 
         out, (h_n, c_n) = self.lstm(feat)
-        last_output = out[:, -1, :]
-        output = self.fc(last_output)  # (batch_size, 100)
+        last_output = h_n[-1]
+        output = self.fc(last_output)
         return output
 
 
