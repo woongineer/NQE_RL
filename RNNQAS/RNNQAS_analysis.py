@@ -3,7 +3,7 @@ import torch
 from data import data_load_and_process as dataprep
 from data import new_data
 from model import CNNLSTM, NQEModel
-from utils import generate_layers, make_arch, plot_policy_loss
+from utils import generate_layers, make_arch, plot_policy_loss, save_probability_animation
 
 if __name__ == "__main__":
     # 파라미터
@@ -37,6 +37,7 @@ if __name__ == "__main__":
     gate_list = None
     loss = 0
     arch_list = {}
+    prob_list = {}
     for pg_epoch in range(max_epoch_PG):
         print(f"{pg_epoch+1}th PG epoch")
         layer_list = []
@@ -81,6 +82,7 @@ if __name__ == "__main__":
             log_prob_list.append(log_prob)
             reward_list.append(reward)
 
+        prob_list[pg_epoch + 1] = {'prob': prob.detach().tolist()}
         returns = []
         G = 0
         for r in reversed(reward_list):
@@ -101,4 +103,5 @@ if __name__ == "__main__":
         PG_opt.step()
 
     plot_policy_loss(arch_list)
+    save_probability_animation(prob_list, "probability_animation.mp4")
     print('tt')
