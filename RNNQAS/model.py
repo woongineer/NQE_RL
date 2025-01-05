@@ -77,3 +77,32 @@ class NQEModel(nn.Module):
         x = torch.concat([x1, x2], 1)
         x = self.qlayer1(x)
         return x[:, 0]
+
+
+class ValueNetwork(nn.Module):
+    """
+    Optional for REINFORCE w Baseline
+    """
+    def __init__(self, feature_dim=16, hidden_dim=32):
+        super(ValueNetwork, self).__init__()
+
+        # 여기서는 간단히 CNNExtract -> LSTM -> FC(1)
+        self.cnn_extractor = CNNExtract(in_channels=1, out_channels=feature_dim)
+
+        self.lstm = nn.LSTM(input_size=feature_dim,
+                            hidden_size=hidden_dim,
+                            batch_first=True)
+        self.fc = nn.Linear(hidden_dim, 1)  # scalar output
+
+    def forward(self, x):
+        batch_size, seq_len, h, w = x.shape
+        x = x.view(batch_size * seq_len, 1, h, w)
+
+        feat = self.cnn_extractor(x)
+        feat = feat.view(batch_size, seq_len, -1)
+
+        out, (h_n, c_n) = self.lstm(feat)
+        last_output = h_n[-1]
+        value = self.fc(last_output)  # shape: [batch_size, 1]
+        return value
+
