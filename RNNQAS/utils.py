@@ -79,7 +79,7 @@ def quantum_embedding(x, gate_list):
             qml.CNOT(wires=[qubit_idx[0], qubit_idx[1]])
 
 
-def plot_policy_loss(arch_list):
+def plot_policy_loss(arch_list, filename):
     x = list(arch_list.keys())
     policy_losses = [arch_list[i]['policy_loss'] for i in x]
     NQE_losses = [arch_list[i]['NQE_loss'] for i in x]
@@ -95,4 +95,4 @@ def plot_policy_loss(arch_list):
     plt.axhline(0, color='black', linestyle='--', linewidth=0.8)  # 기준선
     plt.legend()
     plt.grid()
-    plt.savefig('loss.png')
+    plt.savefig(filename)
