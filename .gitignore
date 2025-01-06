@@ -1,4 +1,5 @@
 /RL/result_plot
+/RNNQAS/wandb
 /RL/__pycache__/
 __pycache__/
 *.pyc
