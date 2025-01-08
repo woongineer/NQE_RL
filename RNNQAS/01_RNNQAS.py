@@ -1,11 +1,13 @@
 import torch
+from datetime import datetime
 
 from data import data_load_and_process as dataprep
 from data import new_data
 from model import CNNLSTM, NQEModel
-from utils import generate_layers, make_arch, plot_policy_loss, save_probability_animation
+from utils import generate_layers, make_arch, plot_policy_loss
 
 if __name__ == "__main__":
+    print(datetime.now())
     # 파라미터
     num_qubit = 4
 
@@ -37,7 +39,6 @@ if __name__ == "__main__":
     gate_list = None
     loss = 0
     arch_list = {}
-    prob_list = {}
     for pg_epoch in range(max_epoch_PG):
         print(f"{pg_epoch+1}th PG epoch")
         layer_list = []
@@ -50,6 +51,7 @@ if __name__ == "__main__":
             print(f"building layer {layer_step + 1}th...")
             output = policy.forward(current_arch)
             prob = torch.softmax(output.squeeze() / temperature, dim=-1)
+
             dist = torch.distributions.Categorical(prob)
             layer_index = dist.sample()
             layer_list.append(layer_index)
@@ -70,28 +72,30 @@ if __name__ == "__main__":
                 loss.backward()
                 NQE_opt.step()
 
-            X1_batch, X2_batch, Y_batch = new_data(batch_size, X_test, Y_test)
+            valid_loss_list = []
             NQE_model.eval()
-            with torch.no_grad():
-                pred = NQE_model(X1_batch, X2_batch)
-            loss = loss_fn(pred, Y_batch)
+            for _ in range(batch_size):
+                X1_batch, X2_batch, Y_batch = new_data(batch_size, X_test, Y_test)
+                with torch.no_grad():
+                    pred = NQE_model(X1_batch, X2_batch)
+                valid_loss_list.append(loss_fn(pred, Y_batch))
 
-            log_prob = dist.log_prob(layer_index.clone().detach())
+            loss = sum(valid_loss_list) / batch_size
             reward = 1 - loss
 
+            log_prob = dist.log_prob(layer_index.clone().detach())
             log_prob_list.append(log_prob)
             reward_list.append(reward)
 
-        prob_list[pg_epoch + 1] = {'prob': prob.detach().tolist()}
         returns = []
         G = 0
         for r in reversed(reward_list):
             G = r + discount * G
             returns.insert(0, G)
         returns = torch.tensor(returns, dtype=torch.float32)
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-        log_prob_list = torch.stack(log_prob_list)
-        policy_loss = -log_prob_list * returns
+
+        log_prob_tensor = torch.stack(log_prob_list)
+        policy_loss = -log_prob_tensor * returns
         policy_loss = policy_loss.mean()
         print(f'policy_loss: {policy_loss}')
 
@@ -103,5 +107,4 @@ if __name__ == "__main__":
         PG_opt.step()
 
     plot_policy_loss(arch_list)
-    save_probability_animation(prob_list, "probability_animation.mp4")
-    print('tt')
+    print(datetime.now())

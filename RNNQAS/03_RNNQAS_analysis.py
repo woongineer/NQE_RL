@@ -1,26 +1,30 @@
 import torch
+from datetime import datetime
 
 from data import data_load_and_process as dataprep
 from data import new_data
 from model import CNNLSTM, NQEModel
 from utils import generate_layers, make_arch, plot_policy_loss
+from utils_for_analysis import save_probability_animation, plot_and_save_trajectory
+from torch.optim.lr_scheduler import StepLR
 
 if __name__ == "__main__":
+    print(datetime.now())
     # 파라미터
     num_qubit = 4
 
     max_epoch_PG = 300  # 50
-    max_layer_step = 8
+    max_layer_step = 5
     max_epoch_NQE = 50  # 50
 
     batch_size = 25
     num_layer = 64
 
     lr_NQE = 0.01
-    lr_PG = 0.001
+    lr_PG = 0.005
 
     temperature = 0.4
-    discount = 0.8
+    discount = 0.85
 
     num_gate_class = 5
 
@@ -33,10 +37,12 @@ if __name__ == "__main__":
 
     loss_fn = torch.nn.MSELoss()
     PG_opt = torch.optim.Adam(policy.parameters(), lr=lr_PG)
+    scheduler = StepLR(PG_opt, step_size=50, gamma=0.9)
 
     gate_list = None
-    loss = 0
     arch_list = {}
+    prob_list = {}
+    layer_list_list = {}
     for pg_epoch in range(max_epoch_PG):
         print(f"{pg_epoch+1}th PG epoch")
         layer_list = []
@@ -46,7 +52,7 @@ if __name__ == "__main__":
         current_arch = torch.randint(0, 1, (1, 1, num_qubit, num_gate_class)).float()
 
         for layer_step in range(max_layer_step):
-            print(f"building layer {layer_step + 1}th...")
+            # print(f"building layer {layer_step + 1}th...")
             output = policy.forward(current_arch)
             prob = torch.softmax(output.squeeze() / temperature, dim=-1)
             dist = torch.distributions.Categorical(prob)
@@ -63,24 +69,31 @@ if __name__ == "__main__":
             for nqe_epoch in range(max_epoch_NQE):
                 X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
                 pred = NQE_model(X1_batch, X2_batch)
-                loss = loss_fn(pred, Y_batch)
+                loss_nqe = loss_fn(pred, Y_batch)
 
                 NQE_opt.zero_grad()
-                loss.backward()
+                loss_nqe.backward()
                 NQE_opt.step()
 
-            X1_batch, X2_batch, Y_batch = new_data(batch_size, X_test, Y_test)
+            valid_loss_list = []
             NQE_model.eval()
-            with torch.no_grad():
-                pred = NQE_model(X1_batch, X2_batch)
-            loss = loss_fn(pred, Y_batch)
+            for _ in range(batch_size):
+                X1_batch, X2_batch, Y_batch = new_data(batch_size, X_test, Y_test)
+                with torch.no_grad():
+                    pred = NQE_model(X1_batch, X2_batch)
+                valid_loss_list.append(loss_fn(pred, Y_batch))
 
             log_prob = dist.log_prob(layer_index.clone().detach())
-            reward = 1 - loss
+            loss = sum(valid_loss_list) / batch_size
+
+            reward_base_rm = 1 - loss - 0.5
+            reward = 4 * (abs(reward_base_rm) * reward_base_rm)
 
             log_prob_list.append(log_prob)
             reward_list.append(reward)
 
+        layer_list_list[pg_epoch + 1] = {'layer_list': layer_list}
+        prob_list[pg_epoch + 1] = {'prob': prob.detach().tolist()}
         returns = []
         G = 0
         for r in reversed(reward_list):
@@ -100,5 +113,9 @@ if __name__ == "__main__":
         torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=1.0)
         PG_opt.step()
 
-    plot_policy_loss(arch_list)
-    print('tt')
+        scheduler.step()
+
+    plot_policy_loss(arch_list, 'loss_schedule_5.png')
+    save_probability_animation(prob_list, "animation_schedule_5.mp4")
+    plot_and_save_trajectory(layer_list_list, filename="trajectory_schedule_5.png", max_epoch_PG=max_epoch_PG, num_layer=num_layer)
+    print(datetime.now())
