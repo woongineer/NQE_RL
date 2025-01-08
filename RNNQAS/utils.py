@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pennylane as qml
 import torch
+import torch.nn as nn
+
+from data import new_data
 
 
 def generate_layers(num_qubit, num_layers):
@@ -96,3 +99,78 @@ def plot_policy_loss(arch_list, filename):
     plt.legend()
     plt.grid()
     plt.savefig(filename)
+
+
+def set_done_loss(num_qubit, max_epoch_NQE, batch_size, X_train, Y_train, X_test, Y_test):
+    dev = qml.device('default.qubit', wires=num_qubit)
+    def exp_Z(x, wires):
+        qml.RZ(-2 * x, wires=wires)
+
+    # exp(i(pi - x1)(pi - x2)ZZ) gate
+    def exp_ZZ2(x1, x2, wires):
+        qml.CNOT(wires=wires)
+        qml.RZ(-2 * (np.pi - x1) * (np.pi - x2), wires=wires[1])
+        qml.CNOT(wires=wires)
+
+    # Quantum Embedding 1 for model 1 (Conventional ZZ feature embedding)
+    def QuantumEmbedding(input):
+        for i in range(3):
+            for j in range(4):
+                qml.Hadamard(wires=j)
+                exp_Z(input[j], wires=j)
+            for k in range(3):
+                exp_ZZ2(input[k], input[k + 1], wires=[k, k + 1])
+            exp_ZZ2(input[3], input[0], wires=[3, 0])
+
+    @qml.qnode(dev, interface="torch")
+    def circuit(inputs):
+        QuantumEmbedding(inputs[0:4])
+        qml.adjoint(QuantumEmbedding)(inputs[4:8])
+        return qml.probs(wires=range(4))
+
+    class Model_Fidelity(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.qlayer1 = qml.qnn.TorchLayer(circuit, weight_shapes={})
+            self.linear_relu_stack1 = nn.Sequential(
+                nn.Linear(4, 8),
+                nn.ReLU(),
+                nn.Linear(8, 8),
+                nn.ReLU(),
+                nn.Linear(8, 4)
+            )
+
+        def forward(self, x1, x2):
+            x1 = self.linear_relu_stack1(x1)
+            x2 = self.linear_relu_stack1(x2)
+            x = torch.concat([x1, x2], 1)
+            x = self.qlayer1(x)
+            return x[:, 0]
+
+    model = Model_Fidelity()
+    model.train()
+
+    loss_fn = torch.nn.MSELoss()
+    opt = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    for it in range(max_epoch_NQE):
+        X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
+        pred = model(X1_batch, X2_batch)
+        loss = loss_fn(pred, Y_batch)
+
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+    valid_loss_list = []
+    model.eval()
+    for _ in range(batch_size):
+        X1_batch, X2_batch, Y_batch = new_data(batch_size, X_test, Y_test)
+        with torch.no_grad():
+            pred = model(X1_batch, X2_batch)
+        valid_loss_list.append(loss_fn(pred, Y_batch))
+
+    soft_condition = (sum(valid_loss_list) / batch_size).detach().item()
+    hard_condition = min(valid_loss_list).detach().item()
+    print(f'Set done standard with 3 zz feature map setting, mean_loss:{soft_condition}, min_loss:{hard_condition}')
+    return soft_condition, hard_condition

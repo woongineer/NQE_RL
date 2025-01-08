@@ -1,5 +1,36 @@
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+import torch
+
+
+def plot_policy_loss_dual_axis(arch_list, filename):
+    x = list(arch_list.keys())
+    policy_losses = [arch_list[i]['policy_loss'] for i in x]
+    NQE_losses = [arch_list[i]['NQE_loss'] for i in x]
+
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    # 왼쪽 y축: Policy Loss
+    ax1.plot(x, policy_losses, marker='o', linestyle='-', color='blue', label='Policy Loss')
+    ax1.set_xlabel('epoch')
+    ax1.set_ylabel('Policy Loss', color='blue')
+    ax1.tick_params(axis='y', labelcolor='blue')
+    ax1.axhline(0, color='black', linestyle='--', linewidth=0.8)  # 기준선
+    ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+    # 오른쪽 y축: NQE Loss
+    ax2 = ax1.twinx()  # 두 번째 y축 생성
+    ax2.plot(x, NQE_losses, marker='s', linestyle='--', color='orange', label='NQE Loss')
+    ax2.set_ylabel('NQE Loss', color='orange')
+    ax2.tick_params(axis='y', labelcolor='orange')
+
+    # 제목과 범례 추가
+    fig.suptitle('Policy & NQE Loss')
+    fig.legend(loc='upper right')
+
+    # 파일 저장
+    plt.savefig(filename)
+    plt.show()
 
 
 def save_probability_animation(prob_list, filename="animation.mp4"):
@@ -47,13 +78,18 @@ def plot_and_save_trajectory(li, filename="trajectory_plot.png", max_epoch_PG=20
         total_timesteps (int): Total number of timesteps to display on the x-axis.
         total_positions (int): Total number of positions (y-axis range).
     """
-    colors = ['red', 'yellow', 'green', 'skyblue', 'black', 'blue', 'orange', 'purple', 'pink', 'brown', 'gray']
+    colors = ['red', 'yellow', 'green', 'skyblue', 'black',
+              'blue', 'orange', 'purple', 'pink', 'brown',
+              'gray', 'tan', 'blue']
     # x축: timestep, y축: value
     timesteps = list(li.keys())
     trajectories = [li[t]['layer_list'] for t in timesteps]
+    trajectories = preprocess_done_trajectory(trajectories)
+
     # 확대된 그래프 생성
     ratio = max(int(max_epoch_PG/num_layer), 1)
     plt.figure(figsize=(20 * ratio, 20))  # 커다란 그림
+
     for i in range(len(trajectories[0])):  # 위치 수만큼 반복
         y_values = [trajectory[i] for trajectory in trajectories]  # i번째 위치의 값 추출
         plt.plot(timesteps, y_values, marker='o', label=f'Trajectory {i + 1}', color=colors[i % len(colors)])
@@ -69,3 +105,19 @@ def plot_and_save_trajectory(li, filename="trajectory_plot.png", max_epoch_PG=20
     # 그래프 저장
     plt.savefig(filename, bbox_inches='tight')
     plt.close()
+
+
+def preprocess_done_trajectory(trajectories):
+    """
+    길이가 다른 리스트를 가장 긴 리스트의 길이에 맞춰 마지막 값을 복사하여 확장합니다.
+    """
+    max_length = max(len(sublist) for sublist in trajectories)  # 가장 긴 리스트의 길이
+    processed_li = []
+
+    for sublist in trajectories:
+        if len(sublist) < max_length:  # 길이가 짧으면
+            last_value = torch.tensor(0)  # 마지막 값 복사 (빈 리스트인 경우 0 추가)
+            sublist = sublist + [last_value] * (max_length - len(sublist))  # 길이 맞추기
+        processed_li.append(sublist)
+
+    return processed_li
