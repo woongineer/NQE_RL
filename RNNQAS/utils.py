@@ -70,8 +70,8 @@ def make_arch(layer_list_flat, num_qubit):
     return torch.from_numpy(arch).float()
 
 
-def make_arch_batchless(layer_list_flat, num_qubit):
-    arch = np.zeros((len(layer_list_flat), num_qubit, 5))
+def make_arch_sb3(layer_list_flat, num_qubit, max_layer_step, num_gate_class):
+    arch = torch.zeros((len(layer_list_flat), num_qubit, num_gate_class))
     for time, (gate, qubit_idx) in enumerate(layer_list_flat):
         if gate == 'R_x':
             arch[time, qubit_idx, 0] = 1
@@ -83,7 +83,10 @@ def make_arch_batchless(layer_list_flat, num_qubit):
             arch[time, qubit_idx[0], 3] = 1
             arch[time, qubit_idx[1], 4] = 1
 
-    return torch.from_numpy(arch).float()
+    padded_arch = torch.zeros(max_layer_step * 4, num_qubit, num_gate_class)
+    padded_arch[:arch.shape[0], :arch.shape[1], :arch.shape[2]] = arch
+
+    return padded_arch
 
 
 def quantum_embedding(x, gate_list):
@@ -188,5 +191,5 @@ def set_done_loss(max_layer_step, num_qubit, max_epoch_NQE, batch_size, X_train,
 
     soft_condition = (sum(valid_loss_list) / batch_size).detach().item()
     hard_condition = min(valid_loss_list).detach().item()
-    print(f'Set done standard with 3 zz feature map setting, mean_loss:{soft_condition}, min_loss:{hard_condition}')
+    print(f'Set done standard with zz feature map setting, mean_loss:{soft_condition}, min_loss:{hard_condition}')
     return soft_condition, hard_condition

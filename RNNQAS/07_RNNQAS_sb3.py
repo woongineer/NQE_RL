@@ -10,7 +10,7 @@ from torch import nn
 from data import data_load_and_process as dataprep
 from data import new_data
 from model import NQEModel
-from utils import make_arch_batchless, generate_layers, set_done_loss
+from utils import make_arch_sb3, generate_layers, set_done_loss
 
 
 class QASEnv(gym.Env):
@@ -47,14 +47,14 @@ class QASEnv(gym.Env):
         self.layer_step = 0
         self.layer_list = []
 
-        state = torch.randint(0, 1, (1, self.num_qubit, self.num_gate_class)).float()
+        state = torch.zeros((self.max_layer_step * 4, self.num_qubit, self.num_gate_class), dtype=torch.float32)
 
         return state.numpy(), {}
 
     def step(self, action):
         self.layer_list.append(action)
         gate_list = [item for i in self.layer_list for item in self.layer_set[int(i)]]
-        state = make_arch_batchless(gate_list, self.num_qubit)
+        state = make_arch_sb3(gate_list, self.num_qubit, self.max_layer_step, self.num_gate_class)
 
         NQE_model = NQEModel(gate_list)
         NQE_model.train()
@@ -175,4 +175,5 @@ if __name__ == "__main__":
 
     print('Learning Start...')
     model.learn(total_timesteps=max_epoch_PG * max_layer_step)
+    model.save('test')
     print(datetime.now())
