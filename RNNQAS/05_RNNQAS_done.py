@@ -5,7 +5,7 @@ from data import data_load_and_process as dataprep
 from data import new_data
 from model import CNNLSTM, NQEModel
 from utils import generate_layers, make_arch, plot_policy_loss, set_done_loss
-from utils_for_analysis import save_probability_animation, plot_and_save_trajectory, plot_policy_loss_dual_axis
+from utils_for_analysis import save_probability_animation, save_trajectory, plot_policy_loss_dual_axis
 
 if __name__ == "__main__":
     print(datetime.now())
@@ -128,6 +128,6 @@ if __name__ == "__main__":
     plot_policy_loss(arch_list, 'old_loss_done.png')
     save_probability_animation(prob_list, "animation_done.mp4")
     plot_policy_loss_dual_axis(arch_list, 'loss_done.png')
-    plot_and_save_trajectory(layer_list_list, filename="trajectory_done.png", max_epoch_PG=max_epoch_PG, num_layer=num_layer)
+    save_trajectory(layer_list_list, filename="trajectory_done.png", max_epoch_PG=max_epoch_PG, num_layer=num_layer)
     print(datetime.now())
 

@@ -5,7 +5,7 @@ from data import data_load_and_process as dataprep
 from data import new_data
 from model import CNNLSTM, NQEModel, ValueNetwork
 from utils import generate_layers, make_arch, plot_policy_loss
-from utils_for_analysis import save_probability_animation, plot_and_save_trajectory
+from utils_for_analysis import save_probability_animation, save_trajectory
 
 if __name__ == "__main__":
     print(datetime.now())
@@ -142,6 +142,6 @@ if __name__ == "__main__":
 
     plot_policy_loss(arch_list, 'loss_base_lr05.png')
     save_probability_animation(prob_list, "animation_base_lr05.mp4")
-    plot_and_save_trajectory(layer_list_list, filename="trajectory_base_lr05.png", max_epoch_PG=max_epoch_PG, num_layer=num_layer)
+    save_trajectory(layer_list_list, filename="trajectory_base_lr05.png", max_epoch_PG=max_epoch_PG, num_layer=num_layer)
 
     print(datetime.now())

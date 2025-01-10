@@ -1,20 +1,19 @@
 import torch
-import wandb
 from datetime import datetime
 
 from data import data_load_and_process as dataprep
 from data import new_data
-from model import CNNLSTM, NQEModel, ValueNetwork
-from utils import generate_layers, make_arch, plot_policy_loss
-from utils_for_analysis import save_probability_animation, save_trajectory
+from model import CNNLSTM, NQEModel
+from utils import generate_layers, make_arch, plot_policy_loss, set_done_loss
+from utils_for_analysis import save_probability_animation, save_trajectory, plot_policy_loss_dual_axis
+from torch.optim.lr_scheduler import StepLR
 
 if __name__ == "__main__":
     print(datetime.now())
-    wandb.init(project="RNNQAS", name='baseline-run')
     # 파라미터
     num_qubit = 4
 
-    max_epoch_PG = 300  # 50
+    max_epoch_PG = 500  # 50
     max_layer_step = 5
     max_epoch_NQE = 50  # 50
 
@@ -25,27 +24,26 @@ if __name__ == "__main__":
     lr_PG = 0.005
 
     temperature = 0.4
-    discount = 0.85
+    discount = 0.8
 
     num_gate_class = 5
 
     # 미리 만들 것
     layer_set = generate_layers(num_qubit, num_layer)
     X_train, X_test, Y_train, Y_test = dataprep(dataset='kmnist', reduction_sz=num_qubit)
+    soft_done, hard_done = set_done_loss(max_layer_step, num_qubit, max_epoch_NQE, batch_size, X_train, Y_train, X_test, Y_test)
 
     policy = CNNLSTM(feature_dim=16, hidden_dim=32, output_dim=num_layer, num_layers=1)
     policy.train()
 
-    wandb.watch(policy, log="all", log_freq=1)
-
     loss_fn = torch.nn.MSELoss()
     PG_opt = torch.optim.Adam(policy.parameters(), lr=lr_PG)
+    scheduler = StepLR(PG_opt, step_size=50, gamma=0.9)
 
     gate_list = None
     arch_list = {}
     prob_list = {}
     layer_list_list = {}
-
     for pg_epoch in range(max_epoch_PG):
         print(f"{pg_epoch+1}th PG epoch")
         layer_list = []
@@ -54,8 +52,13 @@ if __name__ == "__main__":
 
         current_arch = torch.randint(0, 1, (1, 1, num_qubit, num_gate_class)).float()
 
+        done = False
+
         for layer_step in range(max_layer_step):
-            # print(f"building layer {layer_step + 1}th...")
+
+            if done:
+                break
+
             output = policy.forward(current_arch)
             prob = torch.softmax(output.squeeze() / temperature, dim=-1)
 
@@ -88,24 +91,22 @@ if __name__ == "__main__":
                 valid_loss_list.append(loss_fn(pred, Y_batch))
 
             loss = sum(valid_loss_list) / batch_size
-            reward = 1 - loss
 
-            log_prob = dist.log_prob(layer_index)  ##TODO 맞나? .clone().detach()
+            print(f"built layer {layer_step + 1}th..., NQE valid loss: {loss}")
+
+            if loss < hard_done:
+                print(f"Done triggered at layer {layer_step + 1} with loss={loss:.5f}")
+                done = True
+
+            reward_base_rm = 1 - loss - 0.8
+            reward = 4 * (abs(reward_base_rm) * reward_base_rm)
+
+            log_prob = dist.log_prob(layer_index.clone().detach())
             log_prob_list.append(log_prob)
             reward_list.append(reward)
 
-            wandb.log({
-                "PG Epoch": pg_epoch + 1,
-                "Layer Step": layer_step + 1,
-                "Action Index": layer_index.item(),
-                "Action Prob": prob[layer_index].item(),
-                "Reward (per layer_step)": reward.item(),
-                "Val Loss (per layer_step)": loss.item()
-            })
-
         layer_list_list[pg_epoch + 1] = {'layer_list': layer_list}
         prob_list[pg_epoch + 1] = {'prob': prob.detach().tolist()}
-
         returns = []
         G = 0
         for r in reversed(reward_list):
@@ -113,6 +114,7 @@ if __name__ == "__main__":
             returns.insert(0, G)
         returns = torch.tensor(returns, dtype=torch.float32)
 
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
         log_prob_tensor = torch.stack(log_prob_list)
         policy_loss = -log_prob_tensor * returns
         policy_loss = policy_loss.mean()
@@ -122,32 +124,13 @@ if __name__ == "__main__":
 
         PG_opt.zero_grad()
         policy_loss.backward()
-
-        total_norm = 0.0
-        for p in policy.parameters():
-            if p.grad is not None:
-                param_norm = p.grad.data.norm(2)
-                total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** 0.5
-
         torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=1.0)
         PG_opt.step()
 
-        wandb.log({
-            "PG Epoch (Summary)": pg_epoch + 1,
-            "Policy Loss": policy_loss.item(),
-            "NQE Loss": loss.item(),
-            "Reward (last)": reward_list[-1].item(),  # 마지막 layer_step의 reward
-            "Gradient Norm": total_norm
-        })
+        scheduler.step()
 
-    plot_policy_loss(arch_list, 'loss_base_lr05.png')
-    save_probability_animation(prob_list, "animation_base_lr05.mp4")
-    save_trajectory(layer_list_list, filename="trajectory_base_lr05.png", max_epoch_PG=max_epoch_PG, num_layer=num_layer)
-
-    wandb.log({"Policy Loss Plot": wandb.Image('loss_base_lr05.png')})
-    wandb.log({"Trajectory Plot": wandb.Image("trajectory_base_lr05.png")})
-    wandb.log({"Probability Animation": wandb.Video("animation_base_lr05.mp4")})
-
-    wandb.finish()
+    plot_policy_loss(arch_list, 'old_loss_done_step.png')
+    save_probability_animation(prob_list, "animation_done_step.mp4")
+    plot_policy_loss_dual_axis(arch_list, 'loss_done_step.png')
+    save_trajectory(layer_list_list, filename="trajectory_done_step.png", max_epoch_PG=max_epoch_PG, num_layer=num_layer)
     print(datetime.now())

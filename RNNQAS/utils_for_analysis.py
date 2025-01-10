@@ -69,7 +69,7 @@ def save_probability_animation(prob_list, filename="animation.mp4"):
     plt.close(fig)
 
 
-def plot_and_save_trajectory(li, filename="trajectory_plot.png", max_epoch_PG=200, num_layer=64):
+def save_trajectory(li, filename="trajectory_plot.png", max_epoch_PG=200, num_layer=64):
     """
     Plots and saves a trajectory graph based on the provided data.
     Parameters:

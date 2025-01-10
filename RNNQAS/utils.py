@@ -70,6 +70,22 @@ def make_arch(layer_list_flat, num_qubit):
     return torch.from_numpy(arch).float()
 
 
+def make_arch_batchless(layer_list_flat, num_qubit):
+    arch = np.zeros((len(layer_list_flat), num_qubit, 5))
+    for time, (gate, qubit_idx) in enumerate(layer_list_flat):
+        if gate == 'R_x':
+            arch[time, qubit_idx, 0] = 1
+        elif gate == 'R_y':
+            arch[time, qubit_idx, 1] = 1
+        elif gate == 'R_z':
+            arch[time, qubit_idx, 2] = 1
+        elif gate == 'CNOT':
+            arch[time, qubit_idx[0], 3] = 1
+            arch[time, qubit_idx[1], 4] = 1
+
+    return torch.from_numpy(arch).float()
+
+
 def quantum_embedding(x, gate_list):
     for gate, qubit_idx in gate_list:
         if gate == 'R_x':
@@ -101,7 +117,7 @@ def plot_policy_loss(arch_list, filename):
     plt.savefig(filename)
 
 
-def set_done_loss(num_qubit, max_epoch_NQE, batch_size, X_train, Y_train, X_test, Y_test):
+def set_done_loss(max_layer_step, num_qubit, max_epoch_NQE, batch_size, X_train, Y_train, X_test, Y_test):
     dev = qml.device('default.qubit', wires=num_qubit)
     def exp_Z(x, wires):
         qml.RZ(-2 * x, wires=wires)
@@ -114,7 +130,7 @@ def set_done_loss(num_qubit, max_epoch_NQE, batch_size, X_train, Y_train, X_test
 
     # Quantum Embedding 1 for model 1 (Conventional ZZ feature embedding)
     def QuantumEmbedding(input):
-        for i in range(3):
+        for i in range(int(max_layer_step/5)):
             for j in range(4):
                 qml.Hadamard(wires=j)
                 exp_Z(input[j], wires=j)
