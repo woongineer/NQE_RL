@@ -8,6 +8,7 @@ __pycache__/
 *.zip
 *.pt
 *.pth
+*.npz
 *.csv
 .DS_Store
 ._.DS_Store

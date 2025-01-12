@@ -16,7 +16,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from torch import nn
 
 from data import data_load_and_process as dataprep
-from data import new_data
+from data import new_data, data_catdog
 from model import NQEModel
 from utils import make_arch_sb3, generate_layers, set_done_loss
 
@@ -323,18 +323,17 @@ if __name__ == "__main__":
     print(datetime.now())
     num_qubit = 4
     num_gate_class = 5
-    num_layer = 64
+    num_layer = 128
     max_layer_step = 10
 
     lr_NQE = 0.01
-    max_epoch_PG = 300  # 50
+    max_epoch_PG = 250  # 50
     max_epoch_NQE = 50  # 50
     batch_size = 25
 
-    lr_PG = 0.001
-
     layer_set = generate_layers(num_qubit, num_layer)
-    X_train, X_test, Y_train, Y_test = dataprep(dataset='kmnist', reduction_sz=num_qubit)
+    X_train, X_test, Y_train, Y_test = data_catdog(reduction_sz=num_qubit)
+    # X_train, X_test, Y_train, Y_test = dataprep(dataset='kmnist', reduction_sz=num_qubit)
     baseline, done_criteria = set_done_loss(max_layer_step, num_qubit, max_epoch_NQE, batch_size,
                                             X_train, Y_train, X_test, Y_test)
 
