@@ -1,9 +1,11 @@
 /RL/result_plot
 /RNNQAS/wandb
+/RNNQAS/logs
 /RL/__pycache__/
 __pycache__/
 *.pyc
 *.png
+*.zip
 *.pt
 *.pth
 *.csv
