@@ -1,12 +1,71 @@
 import random
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pennylane as qml
+import plotly.graph_objects as go
 import torch
 import torch.nn as nn
+from scipy.stats import gaussian_kde
 
-from data import new_data
+
+import numpy as np
+import plotly.graph_objects as go
+from scipy.stats import gaussian_kde
+
+# 함수 정의
+def plot_distributions(data, output_filename):
+    fig = go.Figure()
+
+    # 파란색 계열 (key = 0)
+    blue_colors = [f"rgba(0, 0, {int(255 - i * 3.5)}, 0.6)" for i in range(64)]
+    # 빨간색 계열 (key = 1)
+    red_colors = [f"rgba({int(255 - i * 3.5)}, 0, 0, 0.6)" for i in range(64)]
+    # 초록색 계열 (key = 2)
+    green_colors = [f"rgba(0, {int(255 - i * 3.5)}, 0, 0.6)" for i in range(64)]
+
+    # 데이터 플롯
+    for main_key in data:
+        if main_key == 0:
+            color_list = blue_colors
+        elif main_key == 1:
+            color_list = red_colors
+        elif main_key == 2:
+            color_list = green_colors
+        else:
+            continue
+
+        for sub_key, values in data[main_key].items():
+            # KDE 계산
+            kde = gaussian_kde(values)
+            x_range = np.linspace(min(values), max(values), 500)
+            density = kde(x_range)
+
+            # 이름 설정
+            trace_name = f"{main_key}-{sub_key}"
+
+            # 분포 추가
+            fig.add_trace(
+                go.Scatter(
+                    x=x_range,
+                    y=density,
+                    mode='lines',
+                    line=dict(color=color_list[sub_key]),
+                    name=trace_name
+                )
+            )
+
+    # 레이아웃 설정
+    fig.update_layout(
+        title="Gaussian KDE Distributions",
+        xaxis_title="Value",
+        yaxis_title="Density",
+        template="plotly_white",
+        legend_title="Distributions"
+    )
+
+    # HTML로 저장
+    fig.write_html(output_filename)
+    print(f"Plot saved to {output_filename}")
 
 
 def generate_layers(num_qubit, num_layers):
@@ -54,142 +113,40 @@ def generate_layers(num_qubit, num_layers):
     return layer_dict
 
 
-def make_arch(layer_list_flat, num_qubit):
-    arch = np.zeros((1, len(layer_list_flat), num_qubit, 5))
-    for time, (gate, qubit_idx) in enumerate(layer_list_flat):
-        if gate == 'R_x':
-            arch[0, time, qubit_idx, 0] = 1
-        elif gate == 'R_y':
-            arch[0, time, qubit_idx, 1] = 1
-        elif gate == 'R_z':
-            arch[0, time, qubit_idx, 2] = 1
-        elif gate == 'CNOT':
-            arch[0, time, qubit_idx[0], 3] = 1
-            arch[0, time, qubit_idx[1], 4] = 1
-
-    return torch.from_numpy(arch).float()
-
-
-def make_arch_sb3(layer_list_flat, num_qubit, max_layer_step, num_gate_class):
-    arch = torch.zeros((len(layer_list_flat), num_qubit, num_gate_class))
-    for time, (gate, qubit_idx) in enumerate(layer_list_flat):
-        if gate == 'R_x':
-            arch[time, qubit_idx, 0] = 1
-        elif gate == 'R_y':
-            arch[time, qubit_idx, 1] = 1
-        elif gate == 'R_z':
-            arch[time, qubit_idx, 2] = 1
-        elif gate == 'CNOT':
-            arch[time, qubit_idx[0], 3] = 1
-            arch[time, qubit_idx[1], 4] = 1
-
-    padded_arch = torch.zeros(max_layer_step * 4, num_qubit, num_gate_class)
-    padded_arch[:arch.shape[0], :arch.shape[1], :arch.shape[2]] = arch
-
-    return padded_arch
-
-
-def quantum_embedding(x, gate_list):
-    for gate, qubit_idx in gate_list:
-        if gate == 'R_x':
-            qml.RX(x[qubit_idx], wires=qubit_idx)
-        elif gate == 'R_y':
-            qml.RY(x[qubit_idx], wires=qubit_idx)
-        elif gate == 'R_z':
-            qml.RZ(x[qubit_idx], wires=qubit_idx)
+def quantum_embedding(x, gate_structure):
+    for gate, qubit_idx, data_index in gate_structure:
+        if gate == 'RX':
+            qml.RX(x[data_index], wires=qubit_idx)
+        elif gate == 'RY':
+            qml.RY(x[data_index], wires=qubit_idx)
+        elif gate == 'RZ':
+            qml.RZ(x[data_index], wires=qubit_idx)
         elif gate == 'CNOT':
             qml.CNOT(wires=[qubit_idx[0], qubit_idx[1]])
 
+class NQEModel(nn.Module):
+    def __init__(self, dev, gate_structure):
+        super().__init__()
 
-def plot_policy_loss(arch_list, filename):
-    x = list(arch_list.keys())
-    policy_losses = [arch_list[i]['policy_loss'] for i in x]
-    NQE_losses = [arch_list[i]['NQE_loss'] for i in x]
+        @qml.qnode(dev, interface='torch')
+        def circuit(inputs):
+            quantum_embedding(inputs[0:4], gate_structure)
+            qml.adjoint(quantum_embedding)(inputs[4:8], gate_structure)
 
-    plt.figure(figsize=(10, 6))
+            return qml.probs(wires=range(4))
 
-    plt.plot(x, policy_losses, marker='o', linestyle='-', label='Policy Loss')
-    plt.plot(x, NQE_losses, marker='s', linestyle='--', label='NQE Loss')
+        self.qlayer1 = qml.qnn.TorchLayer(circuit, weight_shapes={})
+        self.linear_relu_stack1 = nn.Sequential(
+            nn.Linear(4, 8),
+            nn.ReLU(),
+            nn.Linear(8, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4)
+        )
 
-    plt.xlabel('epoch')
-    plt.ylabel('Loss')
-    plt.title('Policy & NQE Loss')
-    plt.axhline(0, color='black', linestyle='--', linewidth=0.8)  # 기준선
-    plt.legend()
-    plt.grid()
-    plt.savefig(filename)
-
-
-def set_done_loss(max_layer_step, num_qubit, max_epoch_NQE, batch_size, X_train, Y_train, X_test, Y_test):
-    dev = qml.device('default.qubit', wires=num_qubit)
-    def exp_Z(x, wires):
-        qml.RZ(-2 * x, wires=wires)
-
-    # exp(i(pi - x1)(pi - x2)ZZ) gate
-    def exp_ZZ2(x1, x2, wires):
-        qml.CNOT(wires=wires)
-        qml.RZ(-2 * (np.pi - x1) * (np.pi - x2), wires=wires[1])
-        qml.CNOT(wires=wires)
-
-    # Quantum Embedding 1 for model 1 (Conventional ZZ feature embedding)
-    def QuantumEmbedding(input):
-        for i in range(int(max_layer_step/5)):
-            for j in range(4):
-                qml.Hadamard(wires=j)
-                exp_Z(input[j], wires=j)
-            for k in range(3):
-                exp_ZZ2(input[k], input[k + 1], wires=[k, k + 1])
-            exp_ZZ2(input[3], input[0], wires=[3, 0])
-
-    @qml.qnode(dev, interface="torch")
-    def circuit(inputs):
-        QuantumEmbedding(inputs[0:4])
-        qml.adjoint(QuantumEmbedding)(inputs[4:8])
-        return qml.probs(wires=range(4))
-
-    class Model_Fidelity(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.qlayer1 = qml.qnn.TorchLayer(circuit, weight_shapes={})
-            self.linear_relu_stack1 = nn.Sequential(
-                nn.Linear(4, 8),
-                nn.ReLU(),
-                nn.Linear(8, 8),
-                nn.ReLU(),
-                nn.Linear(8, 4)
-            )
-
-        def forward(self, x1, x2):
-            x1 = self.linear_relu_stack1(x1)
-            x2 = self.linear_relu_stack1(x2)
-            x = torch.concat([x1, x2], 1)
-            x = self.qlayer1(x)
-            return x[:, 0]
-
-    model = Model_Fidelity()
-    model.train()
-
-    loss_fn = torch.nn.MSELoss()
-    opt = torch.optim.SGD(model.parameters(), lr=0.01)
-
-    for it in range(max_epoch_NQE):
-        X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
-        pred = model(X1_batch, X2_batch)
-        loss = loss_fn(pred, Y_batch)
-
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-
-    valid_loss_list = []
-    model.eval()
-    for _ in range(batch_size):
-        X1_batch, X2_batch, Y_batch = new_data(batch_size, X_test, Y_test)
-        with torch.no_grad():
-            pred = model(X1_batch, X2_batch)
-        valid_loss_list.append(loss_fn(pred, Y_batch))
-
-    soft_condition = (sum(valid_loss_list) / batch_size).detach().item()
-    hard_condition = min(valid_loss_list).detach().item()
-    print(f'Set done standard with zz feature map setting, mean_loss:{soft_condition}, min_loss:{hard_condition}')
-    return soft_condition, hard_condition
+    def forward(self, x1, x2):
+        x1 = self.linear_relu_stack1(x1)
+        x2 = self.linear_relu_stack1(x2)
+        x = torch.concat([x1, x2], 1)
+        x = self.qlayer1(x)
+        return x[:, 0]

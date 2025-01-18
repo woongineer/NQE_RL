@@ -6,6 +6,7 @@ import torch
 
 from data import data_load_and_process as dataprep
 from data import new_data
+from utils import NQEModel, plot_distributions
 from utils_for_analysis import draw_GA_training, draw_GA_evaluation, draw_GA_fitness_distribution
 
 dev = qml.device("default.qubit", wires=4)
@@ -40,7 +41,6 @@ def fitness_function(structure, batch_size, X_batch, y_batch):
 
         return qml.probs(wires=range(4))
 
-    loss_fn = torch.nn.MSELoss()
     X1_batch, X2_batch, Y_batch = new_data(batch_size, X_batch, y_batch)
     qlayer1 = qml.qnn.TorchLayer(circuit, weight_shapes={})
     x = torch.concat([X1_batch, X2_batch], 1)
@@ -61,18 +61,21 @@ if __name__ == "__main__":
     X_test = np.vstack(X_test)
 
     population_size = 64
-    num_generations = 1000
+    num_generations = 250
     num_gates = 16
     num_qubits = 4
     batch_size = 100
+    batch_size_nqe = 50
     feature_dimension = X_train.shape[1]
+
+    loss_fn = torch.nn.MSELoss()
 
     population = [generate_random_structure(num_qubits, num_gates, feature_dimension) for _ in range(population_size)]
     training_loss = []
     evaluation_loss = []
     fitness_history = []
 
-    for_NQE_test = {}
+    for_NQE_test = []
     for generation in range(num_generations):
         ## fitness evaluation
         fitness = [fitness_function(structure, batch_size, X_train, y_train) for structure in population]
@@ -134,13 +137,44 @@ if __name__ == "__main__":
         population += offspring
 
         if generation + 1 == 2:
-            for_NQE_test = {generation + 1: population}
+            for_NQE_test.append(population)
         if generation + 1 == 20:
-            for_NQE_test = {generation + 1: population}
+            for_NQE_test.append(population)
         if generation + 1 == 200:
-            for_NQE_test = {generation + 1: population}
+            for_NQE_test.append(population)
 
 
+    NQE_loss_dist = {}
+    for index, gen in enumerate(for_NQE_test):
+        genwise_loss_list = {}
+        for index_2, selected_struct in enumerate(gen):
+            NQE_model = NQEModel(dev, selected_struct)
+            NQE_model.train()
+            NQE_opt = torch.optim.SGD(NQE_model.parameters(), lr=0.01)
+            print('#######')
+            for nqe_epoch in range(100):
+                nqe_X1_batch, nqe_X2_batch, nqe_Y_batch = new_data(batch_size_nqe, X_train, y_train)
+                pred = NQE_model(nqe_X1_batch, nqe_X2_batch)
+                loss = loss_fn(pred, nqe_Y_batch)
+                if nqe_epoch % 7 == 0:
+                    print(f'Gen: {index}, selected_struct:{index_2}, nqe_epoch: {nqe_epoch}, loss: {loss}')
+
+                NQE_opt.zero_grad()
+                loss.backward()
+                NQE_opt.step()
+
+            valid_loss_list = []
+            NQE_model.eval()
+            for _ in range(batch_size_nqe):
+                nqe_X1_batch, nqe_X2_batch, nqe_Y_batch = new_data(batch_size_nqe, X_test, y_test)
+                with torch.no_grad():
+                    pred = NQE_model(nqe_X1_batch, nqe_X2_batch)
+                valid_loss_list.append(loss_fn(pred, nqe_Y_batch).item())
+
+            genwise_loss_list[index_2] = valid_loss_list
+        NQE_loss_dist[index] = genwise_loss_list
+
+    plot_distributions(NQE_loss_dist, 'distributions_plot.html')
     draw_GA_training(training_loss, 'training_NQEtest.png')
     draw_GA_evaluation(evaluation_loss, 'eval_NQEtest.png')
     draw_GA_fitness_distribution(fitness_history, 'dist_NQEtest.png')
