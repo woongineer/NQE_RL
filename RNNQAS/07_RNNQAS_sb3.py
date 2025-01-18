@@ -274,6 +274,9 @@ class CustomCallback(BaseCallback):
         self.current_valid_loss = []
         self.current_reward_sum = 0
 
+        self.done_count = 0
+        self.early_finish_criteria = 10
+
     def _on_step(self) -> bool:
         actions = self.locals["actions"]
         infos = self.locals["infos"]
@@ -302,6 +305,18 @@ class CustomCallback(BaseCallback):
             # actions 기록 (리스트 통째로)
             self.episode_actions.append(self.current_actions)
 
+            # Done 체크
+            if info.get("done", False):
+                self.done_count += 1
+            else:
+                self.done_count = 0
+
+            # Early stopping 조건 확인
+            if self.done_count >= self.early_finish_criteria:
+                if self.verbose > 0:
+                    print("[Callback] Early finish triggered: done occurred 10 times consecutively.")
+                return False  # 학습 종료
+
             # 로그를 찍어볼 수도 있음
             if self.verbose > 0:
                 print(
@@ -323,12 +338,12 @@ if __name__ == "__main__":
     print(datetime.now())
     num_qubit = 4
     num_gate_class = 5
-    num_layer = 128
-    max_layer_step = 10
+    num_layer = 512
+    max_layer_step = 20
 
     lr_NQE = 0.01
-    max_epoch_PG = 250  # 50
-    max_epoch_NQE = 50  # 50
+    max_epoch_PG = 5000  # 50
+    max_epoch_NQE = 100  # 50
     batch_size = 25
 
     layer_set = generate_layers(num_qubit, num_layer)
@@ -365,7 +380,7 @@ if __name__ == "__main__":
         policy="MlpPolicy",
         env=monitored_env,
         n_steps=128,
-        gamma=0.9,
+        gamma=0.95,
         policy_kwargs=policy_kwargs,
         verbose=1,
     )
@@ -379,8 +394,8 @@ if __name__ == "__main__":
     print('Learning Start...')
     model.learn(total_timesteps=max_epoch_PG * max_layer_step, callback=custom_callback)
     model.save('test')
-    plot_policy_loss(log_dir="./logs", output_filename="policy_loss_plot.png")
-    plot_nqe_loss(custom_callback.episode_valid_losses, filename="NQE_loss.png")
-    save_trajectory(custom_callback.episode_actions, filename="trajectory_plot.png",
+    plot_policy_loss(log_dir="./logs", output_filename="policy_loss_plot_catdog.png")
+    plot_nqe_loss(custom_callback.episode_valid_losses, filename="NQE_loss_catdog.png")
+    save_trajectory(custom_callback.episode_actions, filename="trajectory_plot_catdog.png",
                     max_epoch_PG=max_epoch_PG, num_layer=num_layer)
     print(datetime.now())
