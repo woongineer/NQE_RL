@@ -1,13 +1,13 @@
-from datetime import datetime
-import numpy as np
 import random
-import torch
-import matplotlib.pyplot as plt
-from data import data_load_and_process as dataprep
-import pennylane as qml
-import seaborn as sns
-from utils import generate_layers
+from datetime import datetime
 
+import numpy as np
+import pennylane as qml
+import torch
+
+from data import data_load_and_process as dataprep
+from utils import generate_layers
+from utils_for_analysis import draw_GA_training, draw_GA_evaluation, draw_GA_fitness_distribution
 
 dev = qml.device("default.qubit", wires=4)
 
@@ -142,40 +142,6 @@ if __name__ == "__main__":
         ## update population
         population += offspring
 
-    plt.title('Training min and mean Loss')
-    plt.plot(np.array(training_loss)[:, 0])
-    plt.plot(np.array(training_loss)[:, 1], "--")
-    plt.legend(['Population mean loss', 'Population min loss'])
-    plt.show()
-
-    plt.title('Evaluation min and mean Loss')
-    plt.plot(np.array(evaluation_loss)[:, 0])
-    plt.plot(np.array(evaluation_loss)[:, 1], "--")
-    plt.legend(['Evaluation mean loss', 'Evaluation min loss'])
-    plt.show()
-
-    plt.figure(figsize=(10, 6))
-
-    # 색상 팔레트 생성
-    colors = plt.cm.rainbow(np.linspace(0, 1, len(fitness_history)))
-
-    for i, (generation_fitness, color) in enumerate(zip(fitness_history, colors)):
-        # tensor를 numpy array로 변환
-        generation_fitness_np = [tensor.detach().cpu().item() for tensor in generation_fitness]
-
-        if i == 0:
-            sns.kdeplot(x=generation_fitness_np, bw_adjust=0.7, fill=True, label='first generation', color=color,
-                        alpha=0.5)
-        elif i == len(fitness_history) - 1:
-            sns.kdeplot(x=generation_fitness_np, bw_adjust=0.7, fill=True, label='last generation', color=color,
-                        alpha=0.5)
-        else:
-            sns.kdeplot(x=generation_fitness_np, bw_adjust=0.7, fill=True, label=f'{i * 10}th generation',
-                        color=color, alpha=0.5)
-
-    plt.title('Generation-wise fidelity loss distribution')
-    plt.xlabel('loss value')
-    plt.ylabel('Frequency')
-    plt.ylim(0, 100)
-    plt.legend()
-    plt.show()
+    draw_GA_training(training_loss, 'training_SHJ.png')
+    draw_GA_evaluation(evaluation_loss, 'eval_SHJ.png')
+    draw_GA_fitness_distribution(fitness_history, 'dist_SHJ.png')

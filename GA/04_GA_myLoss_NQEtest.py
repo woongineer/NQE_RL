@@ -72,6 +72,7 @@ if __name__ == "__main__":
     evaluation_loss = []
     fitness_history = []
 
+    for_NQE_test = {}
     for generation in range(num_generations):
         ## fitness evaluation
         fitness = [fitness_function(structure, batch_size, X_train, y_train) for structure in population]
@@ -132,6 +133,14 @@ if __name__ == "__main__":
         ## update population
         population += offspring
 
-    draw_GA_training(training_loss, 'training_myLoss.png')
-    draw_GA_evaluation(evaluation_loss, 'eval_myLoss.png')
-    draw_GA_fitness_distribution(fitness_history, 'dist_myLoss.png')
+        if generation + 1 == 2:
+            for_NQE_test = {generation + 1: population}
+        if generation + 1 == 20:
+            for_NQE_test = {generation + 1: population}
+        if generation + 1 == 200:
+            for_NQE_test = {generation + 1: population}
+
+
+    draw_GA_training(training_loss, 'training_NQEtest.png')
+    draw_GA_evaluation(evaluation_loss, 'eval_NQEtest.png')
+    draw_GA_fitness_distribution(fitness_history, 'dist_NQEtest.png')
