@@ -89,6 +89,23 @@ def make_arch_sb3(layer_list_flat, num_qubit, max_layer_step, num_gate_class):
     return padded_arch
 
 
+def make_arch_sb3_SHJ(structure_list, max_gate, num_qubit, num_gate_class):
+    arch = torch.zeros((max_gate, num_qubit, num_gate_class))
+    for time, (gate_type, control, target, data_dim) in enumerate(structure_list):
+        data_dim += 1
+        if gate_type == 0:
+            arch[time, control, 0] = data_dim
+        elif gate_type == 1:
+            arch[time, control, 1] = data_dim
+        elif gate_type == 2:
+            arch[time, control, 2] = data_dim
+        elif gate_type == 3:
+            arch[time, control, 3] = 5
+            arch[time, target, 4] = 5
+
+    return arch
+
+
 def quantum_embedding(x, gate_list):
     for gate, qubit_idx in gate_list:
         if gate == 'R_x':
