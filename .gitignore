@@ -11,6 +11,8 @@ __pycache__/
 *.pth
 *.npz
 *.csv
+*.pkl
+*.json
 .DS_Store
 ._.DS_Store
 **/.DS_Store
