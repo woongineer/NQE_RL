@@ -25,6 +25,7 @@ if __name__ == "__main__":
 
     X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='kmnist', reduction_sz=num_qubit)
     X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
+    print('dddd')
 
     nn_model = NN()
 
@@ -35,7 +36,8 @@ if __name__ == "__main__":
 
         NQE_results = []
         lazy_checks = []
-        for _ in range(num_of_trial):
+        for k in range(num_of_trial):
+            print(f"small {k}th iteration.........")
             valid_loss_list, initial_params, trained_params = NQE(
                 random_circuit, batch_size_for_NQE, iter_for_NQE,
                 X_train, X_test, Y_train, Y_test
@@ -81,7 +83,7 @@ if __name__ == "__main__":
             "avg_param_change_ratio": avg_change_ratio
         }
 
-    with open("landscape_list_2.pkl", "wb") as f:
+    with open("landscape_list_3.pkl", "wb") as f:
         pickle.dump(landscape_resuls_list, f)
 
     # good_idx, bad_idx, good_means, bad_means = get_good_and_bad(landscape_resuls_list, good_bad_N)

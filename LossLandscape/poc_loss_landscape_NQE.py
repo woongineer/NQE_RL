@@ -1,14 +1,14 @@
 import itertools
 import random
 
-import pennylane as qml
-import torch
-from torch import nn
 import matplotlib.pyplot as plt
-from data import data_load_and_process, new_data
+import pennylane as qml
 import plotly.graph_objs as go
 import plotly.offline as pyo
+import torch
+from torch import nn
 
+from data import data_load_and_process, new_data
 
 num_qubit = 4
 dev = qml.device("default.qubit", wires=num_qubit)
