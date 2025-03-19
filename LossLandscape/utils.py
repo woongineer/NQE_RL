@@ -1,16 +1,18 @@
 import itertools
 import random
 
-import pennylane as qml
-import torch
-import pandas as pd
-from torch import nn
-from data import new_data
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import pennylane as qml
+import torch
+from torch import nn
+
+from data import new_data
 
 num_qubit = 4
 dev = qml.device("default.qubit", wires=num_qubit)
+
 
 def check_lazy_regime_from_params(initial_params, trained_params, threshold=0.1):
     param_diff_norm = (trained_params - initial_params).norm().item()
@@ -43,8 +45,8 @@ def compute_QNTK(nn_model, random_circuit, input_data):
 
         # 출력 차원별로 backward를 따로 호출 -> 자코비안 획득
         for dim_idx in range(output.size(0)):
-            scalar_out = output[dim_idx]      # 이 텐서는 스칼라 크기([1])가 됨
-            nn_model.zero_grad()             # 이전 gradient 초기화
+            scalar_out = output[dim_idx]  # 이 텐서는 스칼라 크기([1])가 됨
+            nn_model.zero_grad()  # 이전 gradient 초기화
 
             # 마지막 차원만 retain_graph=False
             #   (그 외에는 그래프를 유지해야 다음 backward 가능)
@@ -65,7 +67,9 @@ def compute_QNTK(nn_model, random_circuit, input_data):
 
     # grad_vecs는 총 (batch_size * 출력차원) 개의 벡터
     # 각 벡터 크기는 [total_params]
-    grad_matrix = torch.stack(grad_vecs)  # shape: [(batch_size * output_dim), total_params]
+    grad_matrix = torch.stack(
+        grad_vecs
+    )  # shape: [(batch_size * output_dim), total_params]
 
     # NTK 계산: (grad_matrix) × (grad_matrix)^T
     QNTK_matrix = grad_matrix @ grad_matrix.T
@@ -91,9 +95,8 @@ def compute_QNTK(nn_model, random_circuit, input_data):
         "eig_min": eig_min,
         "condition_number": condition_number,
         "eig_entropy": eig_entropy,
-        "eigenvalues": eigenvalues.detach().cpu().numpy()
+        "eigenvalues": eigenvalues.detach().cpu().numpy(),
     }
-
 
 
 def compute_local_ED(fisher_matrix, num_data, gamma=0.5):
@@ -104,43 +107,39 @@ def compute_local_ED(fisher_matrix, num_data, gamma=0.5):
 
     log_det = torch.sum(torch.log(eigenvalues + 1e-10)).item()
     local_ed = (2 / np.log(kappa)) * log_det
-    print('dadasd')
 
-    return {
-        "local_ed": local_ed,
-        "eigenvalues": eigenvalues.detach().cpu().numpy()
-    }
+    return {"local_ed": local_ed, "eigenvalues": eigenvalues.detach().cpu().numpy()}
 
 
-def plot_eigen_spectrum(eigenvalues, title='Eigenvalue Spectrum'):
+def plot_eigen_spectrum(eigenvalues, title="Eigenvalue Spectrum"):
     eigenvalues_sorted = np.sort(eigenvalues)[::-1]
     plt.figure(figsize=(8, 5))
     plt.bar(range(len(eigenvalues_sorted)), eigenvalues_sorted)
-    plt.xlabel('Eigenvalue Index (sorted)')
-    plt.ylabel('Eigenvalue Magnitude')
+    plt.xlabel("Eigenvalue Index (sorted)")
+    plt.ylabel("Eigenvalue Magnitude")
     plt.title(title)
-    plt.yscale('log')
+    plt.yscale("log")
     plt.grid(True)
     plt.show()
 
 
 def quantum_embedding_NQE(x, gate_structure):
     for gate, control, target, feature_dim in gate_structure:
-        if gate == 'RX':
+        if gate == "RX":
             qml.RX(x[feature_dim], wires=control)
-        elif gate == 'RY':
+        elif gate == "RY":
             qml.RY(x[feature_dim], wires=control)
-        elif gate == 'RZ':
+        elif gate == "RZ":
             qml.RZ(x[feature_dim], wires=control)
-        elif gate == 'CNOT':
+        elif gate == "CNOT":
             qml.CNOT(wires=[control, target])
-        elif gate == 'H':
+        elif gate == "H":
             qml.Hadamard(wires=control)
-        elif gate == 'RX_arctan':
+        elif gate == "RX_arctan":
             qml.RX(torch.arctan(x[feature_dim]), wires=control)
-        elif gate == 'RY_arctan':
+        elif gate == "RY_arctan":
             qml.RY(torch.arctan(x[feature_dim]), wires=control)
-        elif gate == 'RZ_arctan':
+        elif gate == "RZ_arctan":
             qml.RZ(torch.arctan(x[feature_dim]), wires=control)
 
 
@@ -148,7 +147,7 @@ class NQEModel(nn.Module):
     def __init__(self, dev, gate_structure):
         super().__init__()
 
-        @qml.qnode(dev, interface='torch')
+        @qml.qnode(dev, interface="torch")
         def circuit(inputs):
             quantum_embedding_NQE(inputs[0:4], gate_structure)
             qml.adjoint(quantum_embedding_NQE)(inputs[4:8], gate_structure)
@@ -157,11 +156,7 @@ class NQEModel(nn.Module):
 
         self.qlayer1 = qml.qnn.TorchLayer(circuit, weight_shapes={})
         self.linear_relu_stack1 = nn.Sequential(
-            nn.Linear(4, 8),
-            nn.ReLU(),
-            nn.Linear(8, 8),
-            nn.ReLU(),
-            nn.Linear(8, 4)
+            nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 8), nn.ReLU(), nn.Linear(8, 4)
         )
 
     def forward(self, x1, x2):
@@ -178,10 +173,14 @@ def NQE(circuit, batch_size_for_NQE, iter_for_NQE, X_train, X_test, Y_train, Y_t
     NQE_opt = torch.optim.SGD(NQE_model.parameters(), lr=0.01)
     loss_fn = torch.nn.MSELoss()
 
-    initial_params = torch.nn.utils.parameters_to_vector(NQE_model.parameters()).detach().clone()
+    initial_params = (
+        torch.nn.utils.parameters_to_vector(NQE_model.parameters()).detach().clone()
+    )
 
     for nqe_epoch in range(iter_for_NQE):
-        nqe_X1_batch, nqe_X2_batch, nqe_Y_batch = new_data(batch_size_for_NQE, X_train, Y_train)
+        nqe_X1_batch, nqe_X2_batch, nqe_Y_batch = new_data(
+            batch_size_for_NQE, X_train, Y_train
+        )
         pred = NQE_model(nqe_X1_batch, nqe_X2_batch)
         loss = loss_fn(pred, nqe_Y_batch)
         NQE_opt.zero_grad()
@@ -191,39 +190,71 @@ def NQE(circuit, batch_size_for_NQE, iter_for_NQE, X_train, X_test, Y_train, Y_t
     valid_loss_list = []
     NQE_model.eval()
     for _ in range(10):
-        nqe_X1_batch, nqe_X2_batch, nqe_Y_batch = new_data(batch_size_for_NQE, X_test, Y_test)
+        nqe_X1_batch, nqe_X2_batch, nqe_Y_batch = new_data(
+            batch_size_for_NQE, X_test, Y_test
+        )
         with torch.no_grad():
             pred = NQE_model(nqe_X1_batch, nqe_X2_batch)
         valid_loss_list.append(loss_fn(pred, nqe_Y_batch).item())
 
-    trained_params = torch.nn.utils.parameters_to_vector(NQE_model.parameters()).detach().clone()
+    trained_params = (
+        torch.nn.utils.parameters_to_vector(NQE_model.parameters()).detach().clone()
+    )
 
     return valid_loss_list, initial_params, trained_params
 
 
-def rerun_good_bad(landscape_resuls_list, good_idx, bad_idx,
-                   batch_size_for_NQE, iter_for_NQE, X_train, X_test, Y_train, Y_test, num_of_trial):
+def rerun_good_bad(
+    landscape_resuls_list,
+    good_idx,
+    bad_idx,
+    batch_size_for_NQE,
+    iter_for_NQE,
+    X_train,
+    X_test,
+    Y_train,
+    Y_test,
+    num_of_trial,
+):
     # GOOD Part
-    print('GOOD start...')
+    print("GOOD start...")
     gidx_NQE = {}
     for gidx in good_idx:
-        print(f'G {gidx}')
-        random_circuit = landscape_resuls_list[gidx]['random_circuit']
-        NQE_results_g = [NQE(random_circuit, batch_size_for_NQE, iter_for_NQE, X_train, X_test, Y_train, Y_test) for _
-                         in
-                         range(num_of_trial)]
-        gidx_NQE[f'{gidx}'] = NQE_results_g
+        print(f"G {gidx}")
+        random_circuit = landscape_resuls_list[gidx]["random_circuit"]
+        NQE_results_g = [
+            NQE(
+                random_circuit,
+                batch_size_for_NQE,
+                iter_for_NQE,
+                X_train,
+                X_test,
+                Y_train,
+                Y_test,
+            )
+            for _ in range(num_of_trial)
+        ]
+        gidx_NQE[f"{gidx}"] = NQE_results_g
 
     # BAD Part
-    print('BAD start...')
+    print("BAD start...")
     bidx_NQE = {}
     for bidx in bad_idx:
-        print(f'B {bidx}')
-        random_circuit = landscape_resuls_list[bidx]['random_circuit']
-        NQE_results_b = [NQE(random_circuit, batch_size_for_NQE, iter_for_NQE, X_train, X_test, Y_train, Y_test) for _
-                         in
-                         range(num_of_trial)]
-        bidx_NQE[f'{bidx}'] = NQE_results_b
+        print(f"B {bidx}")
+        random_circuit = landscape_resuls_list[bidx]["random_circuit"]
+        NQE_results_b = [
+            NQE(
+                random_circuit,
+                batch_size_for_NQE,
+                iter_for_NQE,
+                X_train,
+                X_test,
+                Y_train,
+                Y_test,
+            )
+            for _ in range(num_of_trial)
+        ]
+        bidx_NQE[f"{bidx}"] = NQE_results_b
 
     return gidx_NQE, bidx_NQE
 
@@ -255,11 +286,7 @@ class NN(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.NN = nn.Sequential(
-            nn.Linear(4, 8),
-            nn.ReLU(),
-            nn.Linear(8, 8),
-            nn.ReLU(),
-            nn.Linear(8, 4)
+            nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 8), nn.ReLU(), nn.Linear(8, 4)
         )
 
     def forward(self, x):
@@ -276,13 +303,17 @@ def compute_hessian(nn_model, random_circuit, x1_data, x2_data, y_data, loss_fn)
     # loss_wrapper에서 create_graph=True를 해야 2차 미분 계산 가능
     def loss_wrapper(params):
         torch.nn.utils.vector_to_parameters(params, nn_model.parameters())
-        output_loss = loss_fn(random_circuit, nn_model(x1_data), nn_model(x2_data), y_data)
+        output_loss = loss_fn(
+            random_circuit, nn_model(x1_data), nn_model(x2_data), y_data
+        )
         return output_loss
 
     # hessian 계산 함수
     # 기존의 torch.autograd.functional.hessian을 써도 되지만, 사용자님 코드 스타일 유지위해 아래처럼 구현
     # 1) 먼저 1차 미분(gradient) 구하고
-    grad1 = torch.autograd.grad(loss_wrapper(baseline), (nn_model.parameters()), create_graph=True)
+    grad1 = torch.autograd.grad(
+        loss_wrapper(baseline), (nn_model.parameters()), create_graph=True
+    )
     # grad1은 tuple(param.shape), 각 param마다 gradient가 있음
 
     # 2) 각 gradient 성분에 대해 다시 미분
@@ -291,19 +322,31 @@ def compute_hessian(nn_model, random_circuit, x1_data, x2_data, y_data, loss_fn)
     grad1_flat = torch.cat([g.reshape(-1) for g in grad1 if g is not None])
     n_params = grad1_flat.numel()
     # Hessian shape: [n_params, n_params]
-    hessian = torch.zeros(n_params, n_params, dtype=grad1_flat.dtype, device=grad1_flat.device)
+    hessian = torch.zeros(
+        n_params, n_params, dtype=grad1_flat.dtype, device=grad1_flat.device
+    )
 
     for i, g_el in enumerate(grad1_flat):
         # retain_graph=True로 그래프 보존
         grad2 = torch.autograd.grad(g_el, nn_model.parameters(), retain_graph=True)
         grad2_flat = torch.cat(
-            [g2.reshape(-1) if g2 is not None else torch.zeros(1, device=grad1_flat.device) for g2 in grad2])
+            [
+                (
+                    g2.reshape(-1)
+                    if g2 is not None
+                    else torch.zeros(1, device=grad1_flat.device)
+                )
+                for g2 in grad2
+            ]
+        )
         hessian[i, :] = grad2_flat
 
     return hessian
 
 
-def compute_fisher_information(nn_model, random_circuit, x1_data, x2_data, y_data, loss_fn):
+def compute_fisher_information(
+    nn_model, random_circuit, x1_data, x2_data, y_data, loss_fn
+):
     """
     배치 내 각 샘플에 대해 gradient outer product를 계산하여 평균을 냄 -> Fisher Information
     (full matrix 버전)
@@ -318,9 +361,9 @@ def compute_fisher_information(nn_model, random_circuit, x1_data, x2_data, y_dat
 
     for i in range(n_samples):
         # 샘플별 데이터
-        xi1 = x1_data[i:i + 1]
-        xi2 = x2_data[i:i + 1]
-        yi = y_data[i:i + 1]
+        xi1 = x1_data[i : i + 1]
+        xi2 = x2_data[i : i + 1]
+        yi = y_data[i : i + 1]
 
         nn_model.zero_grad()
         loss_val = loss_fn(random_circuit, nn_model(xi1), nn_model(xi2), yi)
@@ -350,7 +393,11 @@ def compute_flatness(hessian_matrix):
     trace = eigenvalues.sum().item()
     max_eigenvalue = eigenvalues.max().item()
     average_eigenvalue = eigenvalues.mean().item()
-    return {"trace": trace, "max_eigenvalue": max_eigenvalue, "average_eigenvalue": average_eigenvalue}
+    return {
+        "trace": trace,
+        "max_eigenvalue": max_eigenvalue,
+        "average_eigenvalue": average_eigenvalue,
+    }
 
 
 def compute_condition_number(hessian_matrix):
@@ -373,12 +420,22 @@ def compute_local_lipschitz(hessian_matrix):
     return L
 
 
-def sample_gradient_norm_distribution(nn_model, random_circuit, x1_data, x2_data, y_data, loss_fn, num_samples=50,
-                                      perturb_scale=0.1):
+def sample_gradient_norm_distribution(
+    nn_model,
+    random_circuit,
+    x1_data,
+    x2_data,
+    y_data,
+    loss_fn,
+    num_samples=50,
+    perturb_scale=0.1,
+):
     """
     여러 샘플에서 gradient norm의 분포를 측정합니다.
     """
-    baseline = torch.nn.utils.parameters_to_vector(nn_model.parameters()).detach().clone()
+    baseline = (
+        torch.nn.utils.parameters_to_vector(nn_model.parameters()).detach().clone()
+    )
     grad_norms = []
     for _ in range(num_samples):
         perturbation = torch.randn_like(baseline) * perturb_scale
@@ -409,24 +466,24 @@ def loss_function(circuit_structure, x1_data, x2_data, y_data):
 
     def quantum_embedding(x_data):
         for gate, control, target, feature_dim in circuit_structure:
-            if gate == 'RX':
+            if gate == "RX":
                 qml.RX(x_data[feature_dim], wires=control)
-            elif gate == 'RY':
+            elif gate == "RY":
                 qml.RY(x_data[feature_dim], wires=control)
-            elif gate == 'RZ':
+            elif gate == "RZ":
                 qml.RZ(x_data[feature_dim], wires=control)
-            elif gate == 'CNOT':
+            elif gate == "CNOT":
                 qml.CNOT(wires=[control, target])
-            elif gate == 'H':
+            elif gate == "H":
                 qml.Hadamard(wires=control)
-            elif gate == 'RX_arctan':
+            elif gate == "RX_arctan":
                 qml.RX(torch.arctan(x_data[feature_dim]), wires=control)
-            elif gate == 'RY_arctan':
+            elif gate == "RY_arctan":
                 qml.RY(torch.arctan(x_data[feature_dim]), wires=control)
-            elif gate == 'RZ_arctan':
+            elif gate == "RZ_arctan":
                 qml.RZ(torch.arctan(x_data[feature_dim]), wires=control)
 
-    @qml.qnode(dev, interface='torch')
+    @qml.qnode(dev, interface="torch")
     def circuit(inputs):
         quantum_embedding(inputs[0:4])
         qml.adjoint(quantum_embedding)(inputs[4:8])
@@ -443,14 +500,17 @@ def loss_function(circuit_structure, x1_data, x2_data, y_data):
 
 def get_good_and_bad(landscape_resuls_list, good_bad_N):
     import pandas as pd
+
     if len(landscape_resuls_list) < (good_bad_N * 2):
-        print(f'good_bad_N:{good_bad_N} is too large for {landscape_resuls_list} circuit, changed.')
+        print(
+            f"good_bad_N:{good_bad_N} is too large for {landscape_resuls_list} circuit, changed."
+        )
         good_bad_N = len(landscape_resuls_list) // 4
 
     result_simp = {}
     for i in landscape_resuls_list:
         result_simp[i] = []
-        for j in landscape_resuls_list[i]['NQE_results']:
+        for j in landscape_resuls_list[i]["NQE_results"]:
             for k in j:
                 result_simp[i].append(k)
 
@@ -458,23 +518,25 @@ def get_good_and_bad(landscape_resuls_list, good_bad_N):
     for i, vals in result_simp.items():
         for v in vals:
             data.append([i, v])
-    df = pd.DataFrame(data, columns=['landscape', 'score'])
+    df = pd.DataFrame(data, columns=["landscape", "score"])
 
     filtered_data = []
-    for i, group in df.groupby('landscape'):
-        median = group['score'].median()
+    for i, group in df.groupby("landscape"):
+        median = group["score"].median()
         lower_bound = median * 0.9
         upper_bound = median * 1.1
-        filtered_group = group[(group['score'] >= lower_bound) & (group['score'] <= upper_bound)]
+        filtered_group = group[
+            (group["score"] >= lower_bound) & (group["score"] <= upper_bound)
+        ]
         filtered_data.append(filtered_group)
 
     df_filtered = pd.concat(filtered_data)
-    group_stats = df_filtered.groupby('landscape')['score'].agg(['mean', 'std'])
+    group_stats = df_filtered.groupby("landscape")["score"].agg(["mean", "std"])
 
-    good_idx = group_stats['mean'].nsmallest(good_bad_N).index
-    bad_idx = group_stats['mean'].nlargest(good_bad_N).index
+    good_idx = group_stats["mean"].nsmallest(good_bad_N).index
+    bad_idx = group_stats["mean"].nlargest(good_bad_N).index
 
-    good_means = group_stats.loc[good_idx, 'mean'].tolist()
-    bad_means = group_stats.loc[bad_idx, 'mean'].tolist()
+    good_means = group_stats.loc[good_idx, "mean"].tolist()
+    bad_means = group_stats.loc[bad_idx, "mean"].tolist()
 
     return good_idx, bad_idx, good_means, bad_means
