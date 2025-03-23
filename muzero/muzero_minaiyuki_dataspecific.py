@@ -97,7 +97,6 @@ class Game:
     def take_action(self, action, env):
         """Take an action and store the action/reward/new_state into history
         """
-        # TODO step안에 self.actions로 get_fidelity 넣어서 reward도 출력하게 하기
         observation, reward, done = env.step(action)
         self.current_state = observation
         self.action_history.append(action)
@@ -187,7 +186,6 @@ class ReplayBuffer(object):
 class ActionEmbedding(nn.Module):
     def __init__(self, action_space_size, embedding_size, padding_idx=-1):
         super().__init__()
-        ## TODO padding index를 뭐로 할지 아직 못정함
         self.embedding = nn.Embedding(action_space_size, embedding_size,
                                       padding_idx=padding_idx)
 

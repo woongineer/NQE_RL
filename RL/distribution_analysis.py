@@ -34,7 +34,7 @@ def new_data(batch_sz, X, Y):
 
 
 def exp_Z(x, wires):
-    qml.RZ(-2 * x, wires=wires)  ##TODO 왜 이걸 없애니까...???????
+    qml.RZ(-2 * x, wires=wires)
 
 
 # exp(i(pi - x1)(pi - x2)ZZ) gate
@@ -100,7 +100,7 @@ class NQEModel(torch.nn.Module):
             @qml.qnode(dev, interface="torch")
             def circuit(inputs):
                 quantum_embedding_rl(inputs[0:4], self.action_sequence)
-                qml.adjoint(quantum_embedding_rl)(inputs[4:8],  ##TODO 되는거 맞나?
+                qml.adjoint(quantum_embedding_rl)(inputs[4:8],
                                                   self.action_sequence)
                 return qml.probs(wires=range(4))
 

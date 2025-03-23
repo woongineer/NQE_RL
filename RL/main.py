@@ -19,7 +19,7 @@ if __name__ == "__main__":
     RL_lr = 0.01
     state_sz = data_sz ** 2
     action_sz = 11  # Number of possible actions, RX, RY, RZ, H, CX
-    episodes = 1000  ## TODO DQN의 경우는 warm up start때문에 2000번쯤 해야하나?
+    episodes = 1000
     max_steps = 15
 
     # Parameter for DQN, TODO Dynamic for now, need to check

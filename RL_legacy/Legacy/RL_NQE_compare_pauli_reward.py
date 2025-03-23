@@ -210,7 +210,7 @@ class QASEnv(gym.Env):
 
         measure_probs, measure_0s = self.get_obs()
 
-        loss_fn = torch.nn.MSELoss()  # TODO Need discussion
+        loss_fn = torch.nn.MSELoss()
         measure_0s = torch.stack([torch.tensor(i) for i in measure_0s])
         measure_loss = loss_fn(measure_0s, Y_batch)
 

@@ -25,7 +25,6 @@ if __name__ == "__main__":
 
     X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='kmnist', reduction_sz=num_qubit)
     X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
-    print('dddd')
 
     nn_model = NN()
 

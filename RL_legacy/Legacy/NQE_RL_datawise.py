@@ -277,7 +277,7 @@ class QASEnv(gym.Env):
 
         measure_probs, measure_0s = self.get_obs()
 
-        loss_fn = torch.nn.MSELoss(reduction='none')  # TODO Need discussion
+        loss_fn = torch.nn.MSELoss(reduction='none')
         measure_0s = torch.stack([torch.tensor(i) for i in measure_0s])
         measure_loss = loss_fn(measure_0s, Y_batch)
 
@@ -383,7 +383,7 @@ def accuracy_test(predictions, labels):
 
 def get_action_sequence(x):
     max_steps = 14 * N_layers
-    x_tensor = torch.tensor([x], dtype=torch.float32)  ##TODO 여기 잘못했었네. x도 NQE를 통과시켰어야 함
+    x_tensor = torch.tensor([x], dtype=torch.float32)
 
     env_rl = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
                     batch_size=1)
@@ -540,7 +540,7 @@ if __name__ == "__main__":
         for t in reversed(range(len(rewards))):
             G = rewards[t] + gamma * G
             returns[t] = G
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)  #TODO norm or not?
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
 
         # Compute policy loss
         log_probs = torch.stack(log_probs)  # Shape: [num_steps, batch_size]

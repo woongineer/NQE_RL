@@ -151,7 +151,7 @@ def DQN_iterator(RL_model, total_iter, NQE_iter, episodes,
                  RL_lr, max_steps, gamma,
                  X_train, Y_train,
                  buffer_sz, warm_up, target_interval,
-                 trace_dist):  ##TODO trace_distance for DQN
+                 trace_dist):
     NQE_models = []
     Policy_models = []
     action_seqs = []

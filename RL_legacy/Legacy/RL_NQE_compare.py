@@ -226,7 +226,7 @@ class QASEnv(gym.Env):
 
         observation, fidelity = self.get_obs()
 
-        loss_fn = torch.nn.MSELoss()  # TODO Need discussion
+        loss_fn = torch.nn.MSELoss()
         fidelity = torch.stack([torch.tensor(i) for i in fidelity])
         fidelity_loss = loss_fn(fidelity, Y_batch)
 

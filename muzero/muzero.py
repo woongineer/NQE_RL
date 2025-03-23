@@ -400,7 +400,6 @@ if __name__ == "__main__":
             policy_target[0, action] = 1.0
             policy_loss = nn.CrossEntropyLoss()(policy_logits,
                                                 torch.tensor([action]))
-            #TODO reward loss가 없네
             
             loss = value_loss + policy_loss
 

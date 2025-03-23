@@ -187,7 +187,7 @@ class QASEnv(gym.Env):
 
         observation, fidelity = self.get_obs()
 
-        loss_fn = torch.nn.MSELoss(reduction='none')  # TODO Need discussion
+        loss_fn = torch.nn.MSELoss(reduction='none')
         fidelity = torch.stack([torch.tensor(i) for i in fidelity])
         fidelity_loss = loss_fn(fidelity, Y_batch)
 
@@ -196,7 +196,7 @@ class QASEnv(gym.Env):
                               -self.reward_penalty * torch.ones_like(
                                   fidelity_loss)
                               )
-        terminal = (rewards > 0.).all() or (  # TODO percent로?
+        terminal = (rewards > 0.).all() or (
                 len(self.circuit_gates_x1) >= self.max_timesteps)
 
         return observation, rewards, terminal, self.circuit_gates_x1

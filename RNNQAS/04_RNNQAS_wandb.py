@@ -63,7 +63,7 @@ if __name__ == "__main__":
             layer_index = dist.sample()
             layer_list.append(layer_index)
 
-            gate_list = [item for i in layer_list for item in layer_set[int(i)]]  # TODO 줄일까 말까
+            gate_list = [item for i in layer_list for item in layer_set[int(i)]]
             current_arch = make_arch(gate_list, num_qubit)
 
             NQE_model = NQEModel(gate_list)
@@ -90,7 +90,7 @@ if __name__ == "__main__":
             loss = sum(valid_loss_list) / batch_size
             reward = 1 - loss
 
-            log_prob = dist.log_prob(layer_index)  ##TODO 맞나? .clone().detach()
+            log_prob = dist.log_prob(layer_index)
             log_prob_list.append(log_prob)
             reward_list.append(reward)
 

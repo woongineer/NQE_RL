@@ -73,7 +73,7 @@ def train_dqn(X_train_transformed, data_sz, action_sz, Y_train, q_policy,
         while not done:
             total_step += 1
             # Epsilon-greedy 정책
-            epsilon = max(0.01, 1 - (episode / num_episodes))  ##TODO
+            epsilon = max(0.01, 1 - (episode / num_episodes))
             random_number = random.random()
             if random_number < epsilon:
                 action = torch.randint(0, action_sz, (data_sz,))
@@ -96,7 +96,7 @@ def train_dqn(X_train_transformed, data_sz, action_sz, Y_train, q_policy,
             state = next_state
 
             # 일정 시간마다 학습
-            if len(replay_buffer) >= warm_up:  ##TODO
+            if len(replay_buffer) >= warm_up:
                 # 미니배치 샘플링
                 transitions = replay_buffer.sample(batch_sz)
                 batch = Transition(*transitions)

@@ -305,11 +305,11 @@ class QASEnv(gym.Env):
 
         measure_probs, measure_0s = self.get_obs()
 
-        loss_fn = torch.nn.MSELoss(reduction='none')  # TODO Need discussion
+        loss_fn = torch.nn.MSELoss(reduction='none')
         measure_0s = torch.stack([torch.tensor(i) for i in measure_0s])
         measure_loss = loss_fn(measure_0s, Y_batch)
 
-        reward = 1 - measure_loss.mean()  # TODO 개별 배치마다 따로 prob을 뽑은게 아니니까 reward도 통합해야 할 듯, measure_loss를 minimize하는게 목적이니 작을수록 큰 reward
+        reward = 1 - measure_loss.mean()
         terminal = len(self.circuit_gates_x1) >= self.max_timesteps
 
         return measure_probs, reward, terminal
@@ -403,7 +403,7 @@ def accuracy_test(predictions, labels):
 
 
 def get_action_sequence(policy_model, X_batch, max_steps):
-    env_eval = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps, #TODO -1
+    env_eval = QASEnv(num_of_qubit=data_size, max_timesteps=max_steps,
                       batch_size=batch_size)
     state, _ = env_eval.reset()
 
@@ -557,7 +557,7 @@ if __name__ == "__main__":
 
             log_prob = dist.log_prob(action.clone().detach())
             log_probs.append(
-                log_prob.sum())  # TODO 하나의 reward를 만들기 위한 4개의 probs였으니 joint probability이고, 그거에 log를 취했으니 * -> + 로
+                log_prob.sum())
             rewards.append(reward)
 
             state = next_state
@@ -571,7 +571,7 @@ if __name__ == "__main__":
         # Convert returns to tensor
         returns = torch.tensor(returns, dtype=torch.float32)
         returns = (returns - returns.mean()) / (
-                    returns.std() + 1e-8)  # TODO to norm or not? scale이 너무 크긴 한데...
+                    returns.std() + 1e-8)
 
         # Compute policy loss
         log_probs = torch.stack(log_probs)

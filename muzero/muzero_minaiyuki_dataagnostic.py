@@ -86,7 +86,7 @@ class Game:
     def take_action(self, action, env):
         """Take an action and store the action/reward/new_state into history
         """
-        observation, reward, done = env.step(action)  ## TODO 여기서 reward
+        observation, reward, done = env.step(action)
         self.current_state = observation
         self.action_history.append(action)
         self.reward_history.append(reward)
@@ -175,7 +175,7 @@ class ReplayBuffer(object):
 class ActionEmbedding(nn.Module):
     def __init__(self, action_space_size, embedding_size, padding_idx=-1):
         super().__init__()
-        ## TODO padding index를 뭐로 할지 아직 못정함
+
         self.embedding = nn.Embedding(action_space_size, embedding_size,
                                       padding_idx=padding_idx)
 
@@ -685,7 +685,7 @@ def play_game(config, network: Networks, env):
     Plays one game
     """
     # Initialize environment
-    start_state = env.reset()  ## TODO 여기에 새 데이터
+    start_state = env.reset()
 
     game = Game(config['action_space_size'], config['discount'], start_state)
     mcts = MCTS(config)

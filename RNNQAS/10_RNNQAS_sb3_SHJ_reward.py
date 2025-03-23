@@ -314,7 +314,7 @@ if __name__ == "__main__":
     batch_size = 50
 
     X_train, X_test, Y_train, Y_test = dataprep(dataset='kmnist', reduction_sz=num_qubit)
-    done_criteria = 0.1  ## TODO 어떻게 하지
+    done_criteria = 0.1
 
     env = QASEnv(
         num_qubit=num_qubit,

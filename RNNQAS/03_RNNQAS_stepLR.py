@@ -59,7 +59,7 @@ if __name__ == "__main__":
             layer_index = dist.sample()
             layer_list.append(layer_index)
 
-            gate_list = [item for i in layer_list for item in layer_set[int(i)]]  # TODO 줄일까 말까
+            gate_list = [item for i in layer_list for item in layer_set[int(i)]]
             current_arch = make_arch(gate_list, num_qubit)
 
             NQE_model = NQEModel(gate_list)
