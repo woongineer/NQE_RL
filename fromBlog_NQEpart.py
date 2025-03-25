@@ -1,6 +1,4 @@
-import matplotlib.pyplot as plt
 import pennylane as qml
-import seaborn as sns
 import tensorflow as tf
 import torch
 from pennylane import numpy as np

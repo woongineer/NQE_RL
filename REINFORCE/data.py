@@ -5,62 +5,6 @@ from pennylane import numpy as pnp
 from sklearn.decomposition import PCA
 
 
-def data_catdog(reduction_sz=4):
-    data_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/rl/kmnist"
-    catdog_data_path = f"{data_path}/cat_dog_cifar10_pca.npz"
-    catdog_data = np.load(catdog_data_path)
-
-    x_train = catdog_data["X_train"]
-    y_train = catdog_data["y_train"]
-    x_test = catdog_data["X_test"]
-    y_test = catdog_data["y_test"]
-
-    y_train = y_train.flatten()
-    y_test = y_test.flatten()
-
-    # 1) Filter: cat(3), dog(5)만 사용
-    train_filter = np.where((y_train == 3) | (y_train == 5))[0]
-    test_filter = np.where((y_test == 3) | (y_test == 5))[0]
-
-    x_train, y_train = x_train[train_filter], y_train[train_filter]
-    x_test, y_test = x_test[test_filter], y_test[test_filter]
-
-    # 2) 라벨을 0/1로 변환: cat -> 0, dog -> 1 (원하시는 대로)
-    y_train = np.where(y_train == 3, 0, 1)
-    y_test = np.where(y_test == 3, 0, 1)
-
-    # 3) Grayscale 변환: [H, W, 3] -> [H, W], 평균값
-    #   또는 RGB 3채널을 그대로 PCA에 넣어도 되지만, 여기서는 간단히 흑백으로.
-    x_train_gray = np.mean(x_train, axis=-1)
-    x_test_gray = np.mean(x_test, axis=-1)
-
-    # 4) 리사이즈(예: 32×32 -> 256×1) 대신,
-    #    우선 32×32 = 1024 픽셀을 flatten 하거나,
-    #    혹은 tf.image.resize로 임의 크기로 바꿀 수도 있음.
-    #    KMNIST 예제를 맞추려면 256×1으로 맞출 수도 있겠죠.
-    x_train_gray = x_train_gray.reshape(-1, 32 * 32).astype(np.float32) / 255.0
-    x_test_gray = x_test_gray.reshape(-1, 32 * 32).astype(np.float32) / 255.0
-
-    # 5) PCA(reduction_sz)로 차원 축소
-    #    여기선 reduction_sz=4면, shape: [n_samples, 4]
-    pca = PCA(n_components=reduction_sz)
-    x_train_pca = pca.fit_transform(x_train_gray)
-    x_test_pca = pca.transform(x_test_gray)
-
-    def scale_0_to_2pi(data):
-        scaled = []
-        for row in data:
-            rmin, rmax = row.min(), row.max()
-            scaled_row = (row - rmin) * (2 * np.pi / (rmax - rmin) + 1e-8)
-            scaled.append(scaled_row)
-        return np.array(scaled, dtype=np.float32)
-
-    x_train_scaled = scale_0_to_2pi(x_train_pca)
-    x_test_scaled = scale_0_to_2pi(x_test_pca)
-
-    return x_train_scaled[:400], x_test_scaled[:100], y_train[:400], y_test[:100]
-
-
 def data_load_and_process(dataset="mnist", reduction_sz: int = 4):
     data_path = "/Users/jwheo/Desktop/Y/NQE/Neural-Quantum-Embedding/rl/kmnist"
     if dataset == "mnist":
