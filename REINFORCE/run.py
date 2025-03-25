@@ -5,13 +5,11 @@ import numpy as np
 
 from REINFORCE.data import data_load_and_process, new_data
 from REINFORCE.initializer import initialize_circuit
-from REINFORCE.utils import fill_identity_gates, plot_circuit, representer, represent_circuit_tensor, \
-    FixedLinearProjection
+from REINFORCE.utils import fill_identity_gates, plot_circuit, representer, FixedLinearProjection, \
+    sample_remove_position
 from REINFORCE.policy import PolicyInsert, PolicyRemove
 from REINFORCE.fidelity import check_fidelity
 
-
-# from REINFORCE.utils import circuit_profiler, check_fidelity, representer,
 # from REINFORCE.modifier.py import inserter, remover
 
 
@@ -33,19 +31,12 @@ if __name__ == "__main__":
 
     X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='kmnist', reduction_sz=num_of_qubit)
     circuit = initialize_circuit("random", depth, num_of_qubit, gate_types)  # either 'zz' or 'random'
-    filled_circuit = fill_identity_gates(circuit, num_of_qubit, depth)
+    filled_circuit = fill_identity_gates(circuit, num_of_qubit, depth)  ## 안쓰려나?
 
     plot_circuit(circuit, num_of_qubit)  # circuit/filled_circuit
 
-    circuit_representation = representer(circuit, num_of_qubit, depth, gate_types)
-
-    tensor = represent_circuit_tensor(circuit_info=circuit,
-                                      num_qubits=num_of_qubit,
-                                      depth=depth,
-                                      gate_types=gate_types)
-
+    tensor = representer(circuit_info=circuit, num_qubits=num_of_qubit, depth=depth, gate_types=gate_types)
     projection = FixedLinearProjection(in_dim=tensor.shape[1], out_dim=representation_dim)
-    dense_tensor = projection(tensor)
 
     policy_remove = PolicyRemove(input_dim=representation_dim, hidden_dim=policy_dim)
     policy_insert = PolicyInsert(input_dim=representation_dim, hidden_dim=policy_dim)
@@ -56,7 +47,6 @@ if __name__ == "__main__":
     opt_remove = torch.optim.Adam(policy_remove.parameters(), lr=learning_rate)
     opt_insert = torch.optim.Adam(policy_insert.parameters(), lr=learning_rate)
 
-
     for epoch in range(max_epoch):
         X1_batch, X2_batch, Y_batch = new_data(batch_size, X_train, Y_train)
         initial_fidelity = check_fidelity(circuit, X1_batch, X2_batch, Y_batch)
@@ -66,15 +56,21 @@ if __name__ == "__main__":
 
         while not done:
             circuit_representation = representer(circuit, num_of_qubit, depth, gate_types)
-            qubit_index, depth_index = policy_remove(circuit_representation)
+            dense_representation = projection(circuit_representation)
+            remove_prob_tensor = policy_remove(dense_representation)
+            qubit_index, depth_index = sample_remove_position(remove_prob_tensor)
 
             circuit_removed = remover(circuit, (qubit_index, depth_index))
-            circuit_removed_representation = representer(circuit_removed, data_size, depth, gate_types, inputs)
+            circuit_removed_representation = representer(circuit_removed, num_of_qubit, depth, gate_types)
+            dense_removed_representation = projection(circuit_removed_representation)
 
-            gate_type, parameter_index = policy_insert(circuit_removed_representation, (qubit_index, depth_index))
+            insert_prob_tensor = policy_insert(dense_removed_representation, (qubit_index, depth_index))
+            gate_type, parameter_index = sample_insert_gate_param(remove_prob_tensor)
             circuit_inserted = inserter(circuit_removed, (qubit_index, depth_index), (gate_type, parameter_index))
-            inserted_fidelity = check_fidelity(circuit_inserted)
+            inserted_fidelity = check_fidelity(circuit_inserted, X1_batch, X2_batch, Y_batch)
 
             reward = gamma * (inserted_fidelity - initial_fidelity)
             if reward > done:
                 break
+
+            circuit = circuit_inserted

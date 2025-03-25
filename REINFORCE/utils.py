@@ -4,6 +4,28 @@ import torch
 from torch import nn
 
 
+def sample_remove_position(prob_tensor):
+    """
+    Args:
+        prob_tensor (torch.Tensor): shape (depth, qubit), 확률값 [0, 1]
+
+    Returns:
+        (depth_idx, qubit_idx): 선택된 위치의 인덱스
+    """
+    # 확률 tensor를 flat하게 만들고
+    flat_probs = prob_tensor.flatten()  # shape: (depth * qubit,)
+
+    # 정규화 (합이 1이 되도록)
+    norm_probs = flat_probs / flat_probs.sum()
+
+    # multinomial 샘플링
+    idx = torch.multinomial(norm_probs, num_samples=1).item()
+
+    depth = idx // prob_tensor.shape[1]
+    qubit = idx % prob_tensor.shape[1]
+    return depth, qubit
+
+
 class FixedLinearProjection(nn.Module):
     def __init__(self, in_dim, out_dim):
         super().__init__()
@@ -22,78 +44,10 @@ class FixedLinearProjection(nn.Module):
 
 
 
-def project_circuit_tensor(tensor, gate_channel_mapping, embedding_dim=32):
-    """
-    tensor: torch.Tensor, shape (1, C, D, Q)
-    gate_channel_mapping: Dict[str, int], from represent_circuit_tensor()
-    embedding_dim: output dim for dense embedding
-    return: dense_tensor of shape (1, D, Q, embedding_dim)
-    """
-    # (1, C, D, Q) → (C, D, Q)
-    tensor = tensor.squeeze(0)  # (C, D, Q)
-    C, D, Q = tensor.shape
-
-    # Generate projection matrix with meaningfully constructed vectors
-    embedding_matrix = generate_gate_projection(gate_channel_mapping, embedding_dim=embedding_dim)  # (C, E)
-
-    # Apply projection: einsum over channel dimension
-    # (C, D, Q) x (C, E) → (D, Q, E)
-    dense_tensor = torch.einsum('cdq,ce->dqe', tensor, embedding_matrix)
-
-    # Add batch dimension
-    dense_tensor = dense_tensor.unsqueeze(0)  # (1, D, Q, E)
-    return dense_tensor
-
-
-def generate_gate_projection(gate_channel_mapping, embedding_dim=32):
-    """
-    gate_channel_mapping: Dict[str, int]
-    embedding_dim: int, output projection dim
-    return: torch.Tensor of shape (num_channels, embedding_dim)
-    """
-
-    num_channels = len(gate_channel_mapping)
-    embedding_matrix = np.zeros((num_channels, embedding_dim), dtype=np.float32)
-
-    for gate_key, idx in gate_channel_mapping.items():
-        vec = np.zeros(embedding_dim)
-
-        if gate_key.startswith("RX_"):
-            param = int(gate_key.split("_")[1])
-            vec[:4] = [1, 0, 0, param / 3]  # RX axis + param normalized
-
-        elif gate_key.startswith("RY_"):
-            param = int(gate_key.split("_")[1])
-            vec[:4] = [0, 1, 0, param / 3]  # RY axis + param normalized
-
-        elif gate_key.startswith("RZ_"):
-            param = int(gate_key.split("_")[1])
-            vec[:4] = [0, 0, 1, param / 3]  # RZ axis + param normalized
-
-        elif gate_key == "H":
-            vec[:4] = [0.5, 0.5, 0.5, 1.0]  # equal superposition
-
-        elif gate_key.startswith("CNOT_"):
-            parts = gate_key.split("_")
-            control = int(parts[1])
-            target = int(parts[2])
-            # simple encoding: control-target diff
-            vec[4:8] = np.eye(4)[control] + np.eye(4)[target]  # control/target index embedding
-
-        elif gate_key == "I":
-            vec[:4] = [-1, -1, -1, 0]  # 완전 반대 방향
-
-        # normalize vector
-        vec = vec / (np.linalg.norm(vec) + 1e-8)
-        embedding_matrix[idx] = vec
-
-    return torch.tensor(embedding_matrix, dtype=torch.float32)
-
-
-
-def represent_circuit_tensor(circuit_info, num_qubits, depth, gate_types, rotation_set=[0,1,2,3]):
+def representer(circuit_info, num_qubits, depth, gate_types):
     gate_channel_mapping = {}
     channel_counter = 0
+    rotation_set = list(range(num_qubits))
 
     # 1-qubit rotation gates (RX, RY, RZ) with param index
     for g in gate_types:
@@ -156,37 +110,6 @@ def represent_circuit_tensor(circuit_info, num_qubits, depth, gate_types, rotati
     tensor = tensor.transpose(2, 0, 1)  # (C, D, Q)
     tensor = tensor[np.newaxis, :, :, :]  # (1, C, D, Q)
     return torch.tensor(tensor, dtype=torch.float32)
-
-
-def representer(circuit_info, num_qubits, depth, gate_types):
-    num_gate_types = len(gate_types)
-
-    gate_type_to_idx = {g: i for i, g in enumerate(gate_types)}
-
-    # shape: (depth, num_qubits, num_gate_types * num_rot)
-    tensor = np.zeros((depth, num_qubits, num_gate_types * num_qubits), dtype=np.float32)
-
-    for gate in circuit_info:
-        d = gate["depth"]
-        q0, q1 = gate["qubits"]
-        g_type = gate["gate_type"]
-        param = gate["param"]
-
-        gate_idx = gate_type_to_idx[g_type]
-        channel_idx = gate_idx * num_qubits + param
-
-        if g_type == "CNOT":
-            tensor[d, q0, channel_idx] = 1.0
-            tensor[d, q1, channel_idx] = 1.0
-        else:
-            tensor[d, q0, channel_idx] = 1.0
-
-    # reshape to (1, C, D, Q)
-    tensor = tensor.transpose(2, 0, 1)           # (C, D, Q)
-    tensor = tensor[np.newaxis, :, :, :]         # (1, C, D, Q)
-    return tensor
-
-
 
 
 def fill_identity_gates(circuit_info, num_of_qubit, total_depth):
