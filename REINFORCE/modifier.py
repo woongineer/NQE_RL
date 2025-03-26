@@ -35,41 +35,45 @@ def remover(circuit, qubit_index, depth_index):
 
 
 def inserter(circuit, depth_index, insert_decision):
-    """
-    circuit: list of gate dicts
-    qubit_index: int
-    depth_index: int
-    insert_decision: dict with keys: gate_type, param, qubits
-    """
     new_circuit = circuit.copy()
     gate_type = insert_decision["gate_type"]
     param = insert_decision["param"]
     qubits = insert_decision["qubits"]
 
-    # 먼저 CNOT인지 아닌지 확인
     if gate_type == "CNOT":
-
         ctrl, tgt = qubits
 
+        # 먼저 ctrl과 tgt 위치를 찾아둔 뒤, 수정/삭제는 나중에 일괄 반영
+        ctrl_idx = None
+        tgt_idx = None
         for i, gate in enumerate(new_circuit):
-            if (
-                gate["depth"] == depth_index
-                and gate["qubits"][0] == ctrl
-            ):
-                new_circuit[i] = {
-                    "gate_type": "CNOT",
-                    "depth": depth_index,
-                    "qubits": (ctrl, tgt),
-                    "param": None
-                }
-            if (
-                gate["depth"] == depth_index
-                and gate["qubits"][0] == tgt
-            ):
-                del new_circuit[i]
+            if gate["depth"] == depth_index and gate["qubits"][0] == ctrl:
+                ctrl_idx = i
+            elif gate["depth"] == depth_index and gate["qubits"][0] == tgt:
+                tgt_idx = i
+
+        # ctrl 위치를 CNOT으로 변경
+        if ctrl_idx is not None:
+            new_circuit[ctrl_idx] = {
+                "gate_type": "CNOT",
+                "depth": depth_index,
+                "qubits": (ctrl, tgt),
+                "param": None
+            }
+
+        # tgt 위치는 뒤에서 지우는게 안전 (인덱스 에러 방지)
+        # 인덱스가 ctrl_idx보다 크거나 작냐에 따라 순서 주의
+        if tgt_idx is not None:
+            if tgt_idx > ctrl_idx:
+                del new_circuit[tgt_idx]
+            else:
+                # tgt_idx < ctrl_idx면, ctrl_idx가 1 줄어든 상태로 조정
+                del new_circuit[tgt_idx]
+                if ctrl_idx is not None:
+                    ctrl_idx -= 1
 
     else:
-        # RX, RY, RZ, H, I 등의 1-qubit gate
+        # RX, RY, RZ, H, I 등
         for i, gate in enumerate(new_circuit):
             if gate["depth"] == depth_index and gate["qubits"][0] == qubits[0]:
                 new_circuit[i] = {
@@ -80,3 +84,4 @@ def inserter(circuit, depth_index, insert_decision):
                 }
 
     return new_circuit
+

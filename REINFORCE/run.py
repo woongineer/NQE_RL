@@ -9,14 +9,14 @@ from REINFORCE.initializer import initialize_circuit
 from REINFORCE.modifier import remover, inserter
 from REINFORCE.policy import PolicyInsertWithMask, PolicyRemove, insert_gate_map
 from REINFORCE.utils import fill_identity_gates, representer, FixedLinearProjection, sample_remove_position, \
-    sample_insert_gate_param, ordering
+    sample_insert_gate_param, ordering, check_circuit_structure
 
 if __name__ == "__main__":
     print(datetime.now())
 
     num_of_qubit = 4
     gate_types = ["RX", "RY", "RZ", "CNOT", "H"]
-    depth = 5
+    depth = 25
 
     representation_dim = 64
     policy_dim = 64
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     learning_rate = 0.001
     max_episode = 300
     max_step = 100
-    fidelity_drop_threshold = 0.8
+    fidelity_drop_threshold = 0.5
 
     X_train, X_test, Y_train, Y_test = data_load_and_process(dataset='kmnist', reduction_sz=num_of_qubit)
     circuit_original = initialize_circuit("random", depth, num_of_qubit, gate_types)  # either 'zz' or 'random'
@@ -57,6 +57,7 @@ if __name__ == "__main__":
         rewards = []
 
         for step in range(max_step):
+            print(f"step {step}")
             # plot_circuit(circuit, num_of_qubit)
             # print("#########")
             circuit_representation = representer(circuit, num_of_qubit, depth, gate_types)
@@ -67,18 +68,18 @@ if __name__ == "__main__":
             remove_log_prob = torch.log(remove_prob_tensor[0, depth_index, qubit_index] + 1e-8)
 
             circuit_removed = remover(circuit, qubit_index, depth_index)
-            circuit_removed = fill_identity_gates(circuit_removed, num_of_qubit, depth)
             circuit_removed = ordering(circuit_removed)
             circuit_removed_representation = representer(circuit_removed, num_of_qubit, depth, gate_types)
             dense_removed_representation = projection(circuit_removed_representation)
 
             insert_prob_tensor = policy_insert(dense_removed_representation, qubit_index, depth_index)
-            insert_decision = sample_insert_gate_param(insert_prob_tensor, insert_gate_map, qubit_index, num_of_qubit)
+            insert_decision = sample_insert_gate_param(insert_prob_tensor, insert_gate_map, qubit_index, num_of_qubit,
+                                                       circuit_removed, depth_index)
             insert_log_prob = torch.log(insert_prob_tensor[insert_prob_tensor.argmax()] + 1e-8)
 
             circuit_inserted = inserter(circuit_removed, depth_index, insert_decision)
             circuit_inserted = ordering(circuit_inserted)
-            # circuit_inserted = fill_identity_gates(circuit_inserted, num_of_qubit, depth)
+            circuit_inserted = fill_identity_gates(circuit_inserted, num_of_qubit, depth)
             inserted_fidelity = check_fidelity(circuit_inserted, X1_batch, X2_batch, Y_batch)
 
             reward = -inserted_fidelity
@@ -95,6 +96,7 @@ if __name__ == "__main__":
             if low_fidelity_steps >= 10:
                 done = True
                 print("done activated")
+                break
 
         returns = []
         G = 0

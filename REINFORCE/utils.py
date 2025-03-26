@@ -3,56 +3,127 @@ import torch
 from torch import nn
 
 
+
+def check_circuit_structure(circuit):
+    from collections import defaultdict
+
+    # depth별로 qubit[0]을 저장
+    depth_qubits = defaultdict(set)
+    depth_cnot_targets = defaultdict(set)
+
+    for gate in circuit:
+        d = gate['depth']
+        q0 = gate['qubits'][0]
+        q1 = gate['qubits'][1]
+
+        # 같은 depth에 같은 qubit 위치가 중복되면 'd' 출력
+        if q0 in depth_qubits[d]:
+            print('중복')
+        else:
+            depth_qubits[d].add(q0)
+
+        # CNOT이면 target qubit 저장
+        if gate['gate_type'] == 'CNOT' and q1 is not None:
+            depth_cnot_targets[d].add(q1)
+
+    for d in depth_qubits:
+        # depth d에서 필요한 qubit[0] index
+        expected_qubits = {0, 1, 2, 3}
+        present_qubits = depth_qubits[d]
+
+        # CNOT의 target으로 사용된 qubit들은 필수에서 제외
+        missing_qubits = expected_qubits - present_qubits - depth_cnot_targets[d]
+
+        if missing_qubits:
+            print('업슴')
+
+
 def ordering(circuit):
     return sorted(circuit, key=lambda g: (g['depth'], g['qubits'][0]))
 
 
-def sample_insert_gate_param(prob_tensor, insert_gate_map, qubit_index, num_of_qubit):
+def sample_insert_gate_param(prob_tensor, insert_gate_map, qubit_index, num_of_qubit,
+                             circuit, depth_index):
     # value → key 역변환을 위한 dict
     index_to_gate_name = {v: k for k, v in insert_gate_map.items()}
 
-    # 확률 분포에서 샘플링
-    dist = torch.distributions.Categorical(prob_tensor)
-    sampled_index = dist.sample().item()
+    ###########수정된 부분##########
+    # 확률 텐서를 복제해두고, 여기서 중간에 마스킹할 예정
+    local_prob = prob_tensor.clone()
 
-    # 해당 index에 해당하는 gate name
-    gate_name = index_to_gate_name[sampled_index]
+    for _ in range(100):  # 최대 100번까지 재시도
+        # 현재 local_prob를 기반으로 Categorical 분포
+        dist = torch.distributions.Categorical(local_prob)
+        sampled_index = dist.sample().item()
 
-    # 파싱
-    if "_" in gate_name:
-        parts = gate_name.split("_")
-        if parts[0] in ["RX", "RY", "RZ"]:
-            gate_type = parts[0]
-            param = int(parts[1])
-            return {
-                "gate_type": gate_type,
-                "param": param,
+        # 해당 index에 해당하는 gate name
+        gate_name = index_to_gate_name[sampled_index]
+
+        # 파싱
+        if "_" in gate_name:
+            parts = gate_name.split("_")
+            if parts[0] in ["RX", "RY", "RZ"]:
+                gate_type = parts[0]
+                param = int(parts[1])
+                gate_info = {
+                    "gate_type": gate_type,
+                    "param": param,
+                    "qubits": (qubit_index, None)
+                }
+            elif parts[0] == "CNOT":
+                adder = int(parts[1])
+                target = (qubit_index + adder) % num_of_qubit
+                gate_info = {
+                    "gate_type": "CNOT",
+                    "param": None,
+                    "qubits": (qubit_index, target)
+                }
+            else:
+                raise ValueError(f"Unknown gate name: {gate_name}")
+        elif gate_name == "H":
+            gate_info = {
+                "gate_type": "H",
+                "param": None,
                 "qubits": (qubit_index, None)
             }
-        elif parts[0] == "CNOT":
-            adder = int(parts[1])
-            target = (qubit_index + adder) % num_of_qubit
-            return {
-                "gate_type": "CNOT",
+        elif gate_name == "I":
+            gate_info = {
+                "gate_type": "I",
                 "param": None,
-                "qubits": (qubit_index, target)
+                "qubits": (qubit_index, None)
             }
-    elif gate_name == "H":
-        return {
-            "gate_type": "H",
-            "param": None,
-            "qubits": (qubit_index, None)
-        }
+        else:
+            raise ValueError(f"Unknown gate name: {gate_name}")
 
-    elif gate_name == "I":
-        return {
-            "gate_type": "I",
-            "param": None,
-            "qubits": (qubit_index, None)
-        }
+        # ============== CNOT conflict 체크 로직 추가 ==============
+        if gate_info["gate_type"] == "CNOT":
+            ctrl, tgt = gate_info["qubits"]
+            # 이미 해당 depth에서 tgt가 다른 게이트로 점유되어 있다면 conflict
+            conflict = False
+            for g in circuit:
+                if g["depth"] == depth_index:
+                    # g["qubits"]가 (x, y)일 수도 있으니 tgt가 포함되었는지 체크
+                    if tgt in g["qubits"]:
+                        conflict = True
+                        break
 
-    else:
-        raise ValueError(f"Unknown gate name: {gate_name}")
+            if conflict:
+                # 해당 게이트 index를 확률 0으로 만들고 재정규화 후 다시 샘플링
+                local_prob[sampled_index] = 0.0
+                prob_sum = local_prob.sum()
+                if prob_sum < 1e-9:
+                    # 더이상 뽑을 게이트가 전혀 없다면 에러
+                    raise ValueError("[sample_insert_gate_param] 모든 게이트가 마스킹되었습니다.")
+                local_prob = local_prob / prob_sum
+                continue  # 재샘플링으로 넘어감
+
+        # 여기까지 conflict가 없다면, 그대로 gate_info 반환
+        return gate_info
+
+    # 만약 100번을 시도해도 valid 게이트를 못 뽑으면 에러
+    raise ValueError("[sample_insert_gate_param] 유효한 게이트를 찾지 못했습니다.")
+    ###########수정된 부분##########
+
 
 
 def sample_remove_position(prob_tensor):
