@@ -1,8 +1,8 @@
 import pennylane as qml
 import torch
 
-
 dev = qml.device('default.qubit', wires=4)
+
 
 def apply_gate(gate, x):
     gate_type = gate['gate_type']
@@ -29,18 +29,21 @@ def apply_gate(gate, x):
         qml.Hadamard(wires=target)
     elif gate_type == 'CNOT':
         qml.CNOT(wires=[control, target])
-    else:
-        raise ValueError(f"Unsupported gate type: {gate_type}")
+    elif gate_type == 'I':
+        pass
+
 
 def apply_circuit(x, circuit):
     for gate in sorted(circuit, key=lambda g: g['depth']):
         apply_gate(gate, x)
+
 
 @qml.qnode(dev, interface='torch')
 def fidelity_circuit(x1, x2, circuit):
     apply_circuit(x1, circuit)
     qml.adjoint(apply_circuit)(x2, circuit)
     return qml.probs(wires=range(4))
+
 
 def check_fidelity(circuit, X1_batch, X2_batch, Y_batch):
     preds = []

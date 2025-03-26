@@ -1,8 +1,10 @@
-import pennylane as qml
-from pennylane import numpy as np
 import random
 
-def initialize_circuit(types_of_circuit, depth, num_of_qubit, gate_types = None):
+import pennylane as qml
+from pennylane import numpy as np
+
+
+def initialize_circuit(types_of_circuit, depth, num_of_qubit, gate_types=None):
     if types_of_circuit == "zz":
         return _zz_embedding(depth, num_of_qubit)
     elif types_of_circuit == "random":
@@ -11,19 +13,22 @@ def initialize_circuit(types_of_circuit, depth, num_of_qubit, gate_types = None)
         return _random_embedding(depth, num_of_qubit, gate_types)
     else:
         raise ValueError("Invalid types of circuit")
-    
+
 
 def _random_embedding(depth, num_of_qubit, gate_types):
     circuit_info = []
     for i in range(depth):
-        rand_control, rand_target = random.sample(range(num_of_qubit), 2)
         rand_gate = random.choice(gate_types)
         rand_param_index = random.choice(range(num_of_qubit))
+        if rand_gate == 'CNOT':
+            qubits = tuple(random.sample(range(num_of_qubit), 2))
+        else:
+            qubits = (random.choice(range(num_of_qubit)), None)
 
         gate_info = {
             "gate_type": rand_gate,
             "depth": i,
-            "qubits": (rand_control, rand_target),
+            "qubits": qubits,
             "param": rand_param_index
         }
         circuit_info.append(gate_info)
